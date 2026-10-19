@@ -1,0 +1,3 @@
+[submodule "wiredtiger"]
+	path = wiredtiger
+	url = git@github.com:heitzli/wiredtiger.git
