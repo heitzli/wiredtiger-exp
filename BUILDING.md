@@ -166,7 +166,8 @@ applies the normalizations and the signature overlay, resolves `@copydoc`
 directives against `src/include/wiredtiger.h.in`, emits `__init__.pyi`
 (a star re-export mirroring the runtime `__init__.py`) and `py.typed`, and
 writes all four files into `wiredtiger/lang/python/wiredtiger/`. The output
-is deterministic: regeneration with the pinned mypy version (2.4.0) is
+is deterministic: regeneration with the same mypy version (>= 2.4.0, fixed
+per dev environment) is
 byte-identical, which is what makes `--check` a usable CI guard.
 
 Commit the refreshed stubs after regenerating.

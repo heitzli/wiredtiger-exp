@@ -14,4 +14,4 @@ dev = [
 ]
 
 [tool.uv.sources]
-wiredtiger = { git = "https://github.com/heitzli/wiredtiger.git", subdirectory = "lang/python" }
+wiredtiger = { git = "https://github.com/heitzli/wiredtiger.git", subdirectory = "lang/python", rev = "develop" }
