@@ -243,11 +243,14 @@ starts with `from ._wiredtiger import`.
 
 ### Other members show as `Any`
 
-C function-pointer methods (e.g. `Session.open_cursor`) surface as `Any`
-through the class-level builtin wrappers, which is callable and safe. To get
-precise return types, extend the normalization in
-`tools/generate_wiredtiger_stubs.py` (one entry per factory, the same way
-`wiredtiger_open -> Connection` is declared).
+Stubgen cannot see signatures of C function-pointer members, so the generator
+converts them mechanically to `def name(self, *args: Any, **kwargs: Any)
+-> Any` (callable, honest), and refines the public API — module factories,
+`Connection`, `Session`, and `Cursor` — with exact signatures from the
+`SIGNATURES` table in `tools/generate_wiredtiger_stubs.py` (return types
+validated against the runtime: C-backed calls return the WT error code, `0`
+== OK; failures raise `WiredTigerError`). To type another member precisely,
+add one table entry and regenerate.
 
 ## Checklist
 

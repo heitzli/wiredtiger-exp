@@ -291,7 +291,7 @@ dependencies = [
     { name = "cmake" },
     { name = "ninja" },
 ]
-sdist = { hash = "sha256:6fba5093f54b243f0353fe68e56be8f59f1d0e0865bb560d448e9529ebf8d26b" }
+sdist = { hash = "sha256:6cc9384a654ae4e79427a8786271a4938040f65496dbdbe9a0f7460176e57910" }
 
 [package.metadata]
 requires-dist = [
