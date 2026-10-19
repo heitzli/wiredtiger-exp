@@ -12,7 +12,6 @@ session: wiredtiger.Session = conn.open_session()
 
 # Create a simple table
 session.create("table:T", "key_format=S,value_format=S")
-
 # Open a cursor and insert a record
 cursor: wiredtiger.Cursor = session.open_cursor("table:T")
 
