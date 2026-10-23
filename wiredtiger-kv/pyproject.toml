@@ -1,0 +1,21 @@
+[project]
+name = "wiredtiger-kv"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "antlr4-python3-runtime>=4.13.2",
+    "avro>=1.12.2",
+    "pydantic>=2.14.1",
+    "wiredtiger",
+]
+
+[tool.uv.sources]
+wiredtiger = { git = "https://github.com/heitzli/wiredtiger.git", subdirectory = "lang/python" }
+
+[dependency-groups]
+dev = [
+    "antlr4-tools>=0.2.2",
+    "mypy>=2.4.0",
+]

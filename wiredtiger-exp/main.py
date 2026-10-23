@@ -12,9 +12,10 @@ os.system("rm -rf WT_HOME")
 os.makedirs("WT_HOME")
 
 
-conn: wiredtiger.Connection = wiredtiger_open(
-    "WT_HOME", "create,log=(enabled),statistics=(all)"
-)
+# XXX only one can be opened at a time! enforced by file lock!
+
+# NOTE: key value store the value is a byte sequence, no type information in the store, needs to be handled by the application to properly transform the stored values
+conn: wiredtiger.Connection = wiredtiger_open("WT_HOME", "create,log=(enabled),statistics=(all)")
 with conn.open_session() as session:
     print(conn.query_timestamp())
     # Create a simple table

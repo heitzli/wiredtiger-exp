@@ -1,0 +1,58 @@
+{
+  "fields": [
+    {
+      "name": "node",
+      "type": [
+        {
+          "fields": [
+            {
+              "name": "kind",
+              "type": "string"
+            },
+            {
+              "name": "key",
+              "type": "string"
+            }
+          ],
+          "name": "GETNode",
+          "type": "record"
+        },
+        {
+          "fields": [
+            {
+              "name": "kind",
+              "type": "string"
+            },
+            {
+              "name": "key",
+              "type": "string"
+            }
+          ],
+          "name": "DELETENode",
+          "type": "record"
+        },
+        {
+          "fields": [
+            {
+              "name": "kind",
+              "type": "string"
+            },
+            {
+              "name": "key",
+              "type": "string"
+            },
+            {
+              "name": "value",
+              "type": "string"
+            }
+          ],
+          "name": "PUTNode",
+          "type": "record"
+        }
+      ]
+    }
+  ],
+  "name": "AlgebraNode",
+  "namespace": "kv.queryprocessor.algebra",
+  "type": "record"
+}

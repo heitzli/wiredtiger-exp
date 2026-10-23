@@ -1,0 +1,4 @@
+WT_HOME
+.venv
+.mypy**
+**__pycache__

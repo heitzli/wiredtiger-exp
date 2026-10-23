@@ -1,0 +1,37 @@
+{
+  "messages": {
+    "evaluate": {
+      "request": [
+        {
+          "name": "request",
+          "type": "EvaluateQueryRequest"
+        }
+      ],
+      "response": "EvaluateQueryResponse"
+    }
+  },
+  "namespace": "kv.queryprocessor",
+  "protocol": "Queryprocessor",
+  "types": [
+    {
+      "fields": [
+        {
+          "name": "query",
+          "type": "string"
+        }
+      ],
+      "name": "EvaluateQueryRequest",
+      "type": "record"
+    },
+    {
+      "fields": [
+        {
+          "name": "value",
+          "type": "string"
+        }
+      ],
+      "name": "EvaluateQueryResponse",
+      "type": "record"
+    }
+  ]
+}

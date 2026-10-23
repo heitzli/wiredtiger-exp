@@ -1,0 +1,26 @@
+schema kv.queryprocessor.algebra.AlgebraNode;
+
+@namespace("kv.queryprocessor.algebra")
+record AlgebraNode {
+  // Order matters for union resolution! especially if similar fields
+  union {GETNode, DELETENode,PUTNode} node;
+}
+
+@namespace("kv.queryprocessor.algebra")
+record PUTNode {
+  string kind;
+  string key;
+  string value;
+}
+
+@namespace("kv.queryprocessor.algebra")
+record GETNode {
+  string kind;
+  string key;
+}
+
+@namespace("kv.queryprocessor.algebra")
+record DELETENode {
+  string kind;
+  string key;
+}

@@ -1,0 +1,15 @@
+@namespace("kv.queryprocessor")
+protocol Queryprocessor{
+
+  record EvaluateQueryRequest {
+    string query;
+  }
+
+  record EvaluateQueryResponse {
+    string value;
+  }
+
+  // TODO add error response type
+  EvaluateQueryResponse evaluate(EvaluateQueryRequest request);
+
+}

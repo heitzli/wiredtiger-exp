@@ -1,0 +1,6 @@
+{
+  "messages": {},
+  "namespace": "kv.client",
+  "protocol": "Client",
+  "types": []
+}

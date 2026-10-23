@@ -1,0 +1,95 @@
+{
+  "messages": {
+    "execute": {
+      "request": [
+        {
+          "name": "request",
+          "type": "ExecuteQueryRequest"
+        }
+      ],
+      "response": "ExecuteQueryResponse"
+    }
+  },
+  "namespace": "kv.storagemanager",
+  "protocol": "StorageManager",
+  "types": [
+    {
+      "fields": [
+        {
+          "name": "node",
+          "type": [
+            {
+              "fields": [
+                {
+                  "name": "kind",
+                  "type": "string"
+                },
+                {
+                  "name": "key",
+                  "type": "string"
+                }
+              ],
+              "name": "GETNode",
+              "type": "record"
+            },
+            {
+              "fields": [
+                {
+                  "name": "kind",
+                  "type": "string"
+                },
+                {
+                  "name": "key",
+                  "type": "string"
+                }
+              ],
+              "name": "DELETENode",
+              "type": "record"
+            },
+            {
+              "fields": [
+                {
+                  "name": "kind",
+                  "type": "string"
+                },
+                {
+                  "name": "key",
+                  "type": "string"
+                },
+                {
+                  "name": "value",
+                  "type": "string"
+                }
+              ],
+              "name": "PUTNode",
+              "type": "record"
+            }
+          ]
+        }
+      ],
+      "name": "AlgebraNode",
+      "namespace": "kv.queryprocessor.algebra",
+      "type": "record"
+    },
+    {
+      "fields": [
+        {
+          "name": "plan",
+          "type": "kv.queryprocessor.algebra.AlgebraNode"
+        }
+      ],
+      "name": "ExecuteQueryRequest",
+      "type": "record"
+    },
+    {
+      "fields": [
+        {
+          "name": "value",
+          "type": "string"
+        }
+      ],
+      "name": "ExecuteQueryResponse",
+      "type": "record"
+    }
+  ]
+}

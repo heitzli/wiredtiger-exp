@@ -1,0 +1,15 @@
+@namespace("kv.storagemanager")
+protocol StorageManager {
+  import idl "algebranode.avdl";
+
+  record ExecuteQueryRequest {
+    kv.queryprocessor.algebra.AlgebraNode plan;
+  }
+
+  record ExecuteQueryResponse {
+    string value;
+  }
+
+  // TODO add error response type
+  ExecuteQueryResponse execute(ExecuteQueryRequest request);
+}

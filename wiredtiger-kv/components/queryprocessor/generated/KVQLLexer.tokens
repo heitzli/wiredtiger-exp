@@ -1,0 +1,7 @@
+PUT=1
+GET=2
+DELETE=3
+SEMI=4
+ID=5
+WS=6
+';'=4
