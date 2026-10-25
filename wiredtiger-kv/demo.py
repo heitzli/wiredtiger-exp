@@ -10,11 +10,14 @@ client = Client(
     component_socket="/tmp/client.sock",
 )
 
-val = client.evaluate(query="PUT testkey 12345;")
-print(f"received : {val}")
+val = client._query(query="PUT testkey 12345;")
+print(f"_query received : {val}")
 
-val2 = client.evaluate(query="GET testkey;")
-print(f"received : {val2}")
+val = client.put(key="testkey", value="123456")
+print(f"put received : {val}")
 
-val3 = client.evaluate(query="DELETE testkey;")
-print(f"received : {val3}")
+val2 = client.get(key="testkey")
+print(f" get received : {val2}")
+
+val3 = client.delete(key="testkey")
+print(f" delete received : {val3}")
