@@ -1,12 +1,16 @@
 @namespace("document.queryprocessor")
 protocol Queryprocessor{
+
   import idl "errors.avdl";
+
   record EvaluateQueryRequest {
     string query;
+    union {null, map<string>} custom = null;
   }
 
   record EvaluateQueryResponse {
     string value;
+    union {null, map<string>} custom = null;
   }
 
   EvaluateQueryResponse evaluate(EvaluateQueryRequest request) throws document.errors.QueryProcessorError, document.errors.DocumentQLSyntaxError, document.errors.WiredTigerError;

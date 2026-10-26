@@ -1,0 +1,13 @@
+{
+  "fields": [
+    {
+      "name": "node",
+      "type": [
+        "null"
+      ]
+    }
+  ],
+  "name": "AlgebraNode",
+  "namespace": "document.queryprocessor.algebra",
+  "type": "record"
+}

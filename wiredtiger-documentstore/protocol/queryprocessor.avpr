@@ -1,0 +1,148 @@
+{
+  "messages": {
+    "evaluate": {
+      "errors": [
+        "document.errors.QueryProcessorError",
+        "document.errors.DocumentQLSyntaxError",
+        "document.errors.WiredTigerError"
+      ],
+      "request": [
+        {
+          "name": "request",
+          "type": "EvaluateQueryRequest"
+        }
+      ],
+      "response": "EvaluateQueryResponse"
+    }
+  },
+  "namespace": "document.queryprocessor",
+  "protocol": "Queryprocessor",
+  "types": [
+    {
+      "fields": [
+        {
+          "name": "error",
+          "type": "string"
+        },
+        {
+          "default": "",
+          "name": "component",
+          "type": "string"
+        },
+        {
+          "default": "GenericError",
+          "name": "kind",
+          "type": "string"
+        }
+      ],
+      "name": "Error",
+      "namespace": "document.errors",
+      "type": "error"
+    },
+    {
+      "fields": [
+        {
+          "name": "error",
+          "type": "string"
+        },
+        {
+          "default": "",
+          "name": "component",
+          "type": "string"
+        },
+        {
+          "default": "QueryProcessorError",
+          "name": "kind",
+          "type": "string"
+        }
+      ],
+      "name": "QueryProcessorError",
+      "namespace": "document.errors",
+      "type": "error"
+    },
+    {
+      "fields": [
+        {
+          "name": "error",
+          "type": "string"
+        },
+        {
+          "default": "",
+          "name": "component",
+          "type": "string"
+        },
+        {
+          "default": "DocumentQLSyntaxError",
+          "name": "kind",
+          "type": "string"
+        }
+      ],
+      "name": "DocumentQLSyntaxError",
+      "namespace": "document.errors",
+      "type": "error"
+    },
+    {
+      "fields": [
+        {
+          "name": "error",
+          "type": "string"
+        },
+        {
+          "default": "",
+          "name": "component",
+          "type": "string"
+        },
+        {
+          "default": "WiredTigerError",
+          "name": "kind",
+          "type": "string"
+        }
+      ],
+      "name": "WiredTigerError",
+      "namespace": "document.errors",
+      "type": "error"
+    },
+    {
+      "fields": [
+        {
+          "name": "query",
+          "type": "string"
+        },
+        {
+          "default": null,
+          "name": "custom",
+          "type": [
+            "null",
+            {
+              "type": "map",
+              "values": "string"
+            }
+          ]
+        }
+      ],
+      "name": "EvaluateQueryRequest",
+      "type": "record"
+    },
+    {
+      "fields": [
+        {
+          "name": "value",
+          "type": "string"
+        },
+        {
+          "default": null,
+          "name": "custom",
+          "type": [
+            "null",
+            {
+              "type": "map",
+              "values": "string"
+            }
+          ]
+        }
+      ],
+      "name": "EvaluateQueryResponse",
+      "type": "record"
+    }
+  ]
+}

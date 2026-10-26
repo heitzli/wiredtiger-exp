@@ -8,18 +8,22 @@ protocol Broker {
     string name;
     string socket;
     string protocol;
+    union {null, map<string>} custom = null;
   }
 
   record RegisterComponentResponse {
     int result;
+    union {null, map<string>} custom = null;
   }
 
   record ComponentProtocolRequest {
     string name;
+    union {null, map<string>} custom = null;
   }
 
   record ComponentProtocolResponse {
     string? protocol = null;
+    union {null, map<string>} custom = null;
   }
 
   message.Message sendMessage(message.Message message);

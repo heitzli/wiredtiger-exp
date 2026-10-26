@@ -1,0 +1,159 @@
+{
+  "messages": {
+    "execute": {
+      "errors": [
+        "document.errors.WiredTigerError"
+      ],
+      "request": [
+        {
+          "name": "request",
+          "type": "ExecuteQueryRequest"
+        }
+      ],
+      "response": "ExecuteQueryResponse"
+    }
+  },
+  "namespace": "document.storagemanager",
+  "protocol": "StorageManager",
+  "types": [
+    {
+      "fields": [
+        {
+          "name": "node",
+          "type": [
+            "null"
+          ]
+        }
+      ],
+      "name": "AlgebraNode",
+      "namespace": "document.queryprocessor.algebra",
+      "type": "record"
+    },
+    {
+      "fields": [
+        {
+          "name": "error",
+          "type": "string"
+        },
+        {
+          "default": "",
+          "name": "component",
+          "type": "string"
+        },
+        {
+          "default": "GenericError",
+          "name": "kind",
+          "type": "string"
+        }
+      ],
+      "name": "Error",
+      "namespace": "document.errors",
+      "type": "error"
+    },
+    {
+      "fields": [
+        {
+          "name": "error",
+          "type": "string"
+        },
+        {
+          "default": "",
+          "name": "component",
+          "type": "string"
+        },
+        {
+          "default": "QueryProcessorError",
+          "name": "kind",
+          "type": "string"
+        }
+      ],
+      "name": "QueryProcessorError",
+      "namespace": "document.errors",
+      "type": "error"
+    },
+    {
+      "fields": [
+        {
+          "name": "error",
+          "type": "string"
+        },
+        {
+          "default": "",
+          "name": "component",
+          "type": "string"
+        },
+        {
+          "default": "DocumentQLSyntaxError",
+          "name": "kind",
+          "type": "string"
+        }
+      ],
+      "name": "DocumentQLSyntaxError",
+      "namespace": "document.errors",
+      "type": "error"
+    },
+    {
+      "fields": [
+        {
+          "name": "error",
+          "type": "string"
+        },
+        {
+          "default": "",
+          "name": "component",
+          "type": "string"
+        },
+        {
+          "default": "WiredTigerError",
+          "name": "kind",
+          "type": "string"
+        }
+      ],
+      "name": "WiredTigerError",
+      "namespace": "document.errors",
+      "type": "error"
+    },
+    {
+      "fields": [
+        {
+          "name": "plan",
+          "type": "document.queryprocessor.algebra.AlgebraNode"
+        },
+        {
+          "default": null,
+          "name": "custom",
+          "type": [
+            "null",
+            {
+              "type": "map",
+              "values": "string"
+            }
+          ]
+        }
+      ],
+      "name": "ExecuteQueryRequest",
+      "type": "record"
+    },
+    {
+      "fields": [
+        {
+          "name": "value",
+          "type": "string"
+        },
+        {
+          "default": null,
+          "name": "custom",
+          "type": [
+            "null",
+            {
+              "type": "map",
+              "values": "string"
+            }
+          ]
+        }
+      ],
+      "name": "ExecuteQueryResponse",
+      "type": "record"
+    }
+  ]
+}
