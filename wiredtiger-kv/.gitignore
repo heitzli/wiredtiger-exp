@@ -2,3 +2,4 @@ WT_HOME
 .venv
 .mypy**
 **__pycache__
+**.ruff_cache
