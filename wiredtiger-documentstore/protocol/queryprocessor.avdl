@@ -1,0 +1,14 @@
+@namespace("document.queryprocessor")
+protocol Queryprocessor{
+  import idl "errors.avdl";
+  record EvaluateQueryRequest {
+    string query;
+  }
+
+  record EvaluateQueryResponse {
+    string value;
+  }
+
+  EvaluateQueryResponse evaluate(EvaluateQueryRequest request) throws document.errors.QueryProcessorError, document.errors.DocumentQLSyntaxError, document.errors.WiredTigerError;
+
+}

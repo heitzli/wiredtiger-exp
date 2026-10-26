@@ -1,0 +1,21 @@
+schema document.errors;
+
+@namespace("document.errors")
+error QueryProcessorError {
+  string error;
+  string component = "";
+  string kind = "QueryProcessorError";
+}
+@namespace("document.errors")
+error DocumentQLSyntaxError {
+  string error;
+  string component = "";
+  string kind = "DocumentQLSyntaxError";
+}
+
+@namespace("document.errors")
+error WiredTigerError {
+  string error;
+  string component = "";
+  string kind = "WiredTigerError";
+}

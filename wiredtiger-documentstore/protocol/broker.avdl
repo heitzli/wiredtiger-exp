@@ -1,0 +1,31 @@
+
+@namespace("broker")
+protocol Broker {
+
+  import idl "message.avdl";
+
+  record RegisterComponentRequest {
+    string name;
+    string socket;
+    string protocol;
+  }
+
+  record RegisterComponentResponse {
+    int result;
+  }
+
+  record ComponentProtocolRequest {
+    string name;
+  }
+
+  record ComponentProtocolResponse {
+    string? protocol = null;
+  }
+
+  message.Message sendMessage(message.Message message);
+
+  RegisterComponentResponse register(RegisterComponentRequest request);
+
+  ComponentProtocolResponse getComponentProtocol(ComponentProtocolRequest request);
+
+}

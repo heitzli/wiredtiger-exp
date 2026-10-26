@@ -1,0 +1,4 @@
+@namespace("document.client")
+protocol Client {
+  // Dummy protocol to satisfy current component class
+}

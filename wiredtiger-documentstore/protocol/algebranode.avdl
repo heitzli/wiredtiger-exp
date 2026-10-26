@@ -1,0 +1,7 @@
+schema document.queryprocessor.algebra;
+
+@namespace("document.queryprocessor.algebra")
+record AlgebraNode {
+  // Order matters for union resolution! especially if similar fields
+  union {} node;
+}

@@ -1,0 +1,15 @@
+@namespace("document.storagemanager")
+protocol StorageManager {
+  import idl "algebranode.avdl";
+  import idl "errors.avdl";
+
+  record ExecuteQueryRequest {
+    document.queryprocessor.algebra.AlgebraNode plan;
+  }
+
+  record ExecuteQueryResponse {
+    string value;
+  }
+
+  ExecuteQueryResponse execute(ExecuteQueryRequest request) throws document.errors.WiredTigerError;
+}
