@@ -5,10 +5,12 @@ protocol StorageManager {
 
   record ExecuteQueryRequest {
     kv.queryprocessor.algebra.AlgebraNode plan;
+    union {null, map<string>} custom = null;
   }
 
   record ExecuteQueryResponse {
     string value;
+    union {null, map<string>} custom = null;
   }
 
   ExecuteQueryResponse execute(ExecuteQueryRequest request) throws kv.errors.WiredTigerError;
