@@ -1,6 +1,7 @@
 @namespace("kv.storagemanager")
 protocol StorageManager {
   import idl "algebranode.avdl";
+  import idl "errors.avdl";
 
   record ExecuteQueryRequest {
     kv.queryprocessor.algebra.AlgebraNode plan;
@@ -10,6 +11,5 @@ protocol StorageManager {
     string value;
   }
 
-  // TODO add error response type
-  ExecuteQueryResponse execute(ExecuteQueryRequest request);
+  ExecuteQueryResponse execute(ExecuteQueryRequest request) throws kv.errors.WiredTigerError;
 }

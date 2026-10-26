@@ -1,6 +1,11 @@
 {
   "messages": {
     "evaluate": {
+      "errors": [
+        "kv.errors.QueryProcessorError",
+        "kv.errors.KVQLSyntaxError",
+        "kv.errors.WiredTigerError"
+      ],
       "request": [
         {
           "name": "request",
@@ -13,6 +18,69 @@
   "namespace": "kv.queryprocessor",
   "protocol": "Queryprocessor",
   "types": [
+    {
+      "fields": [
+        {
+          "name": "error",
+          "type": "string"
+        },
+        {
+          "default": "",
+          "name": "component",
+          "type": "string"
+        },
+        {
+          "default": "QueryProcessorError",
+          "name": "kind",
+          "type": "string"
+        }
+      ],
+      "name": "QueryProcessorError",
+      "namespace": "kv.errors",
+      "type": "error"
+    },
+    {
+      "fields": [
+        {
+          "name": "error",
+          "type": "string"
+        },
+        {
+          "default": "",
+          "name": "component",
+          "type": "string"
+        },
+        {
+          "default": "KVQLSyntaxError",
+          "name": "kind",
+          "type": "string"
+        }
+      ],
+      "name": "KVQLSyntaxError",
+      "namespace": "kv.errors",
+      "type": "error"
+    },
+    {
+      "fields": [
+        {
+          "name": "error",
+          "type": "string"
+        },
+        {
+          "default": "",
+          "name": "component",
+          "type": "string"
+        },
+        {
+          "default": "WiredTigerError",
+          "name": "kind",
+          "type": "string"
+        }
+      ],
+      "name": "WiredTigerError",
+      "namespace": "kv.errors",
+      "type": "error"
+    },
     {
       "fields": [
         {

@@ -15,6 +15,7 @@ import avro.ipc
 import avro.protocol
 from avro.protocol import Protocol
 
+from .errors import error_from_datum
 from .framedsocket import FramedSocket
 from .message_codec import (
     CODEC,
@@ -22,6 +23,7 @@ from .message_codec import (
     decode_avro_datum,
     decode_message,
     decode_payload_envelope,
+    encode_error_payload,
     encode_message,
     encode_payload,
     encode_response_payload,
@@ -129,35 +131,8 @@ class Component(ABC):
             )
         return message_from_dict(reply_datum)
 
-    def _request_schema(self, rpc_name: str, destination: str) -> Any:
-        """Helper function to retrieve the request schema"""
-        destination_protocol = self.component_protocols.get(destination)
-        if destination_protocol is None:
-            proto = self.requestor.request(
-                "getComponentProtocol",
-                {
-                    "request": {
-                        "name": destination,
-                    }
-                },
-            )
-            protcol = proto["protocol"]
-            if protcol is None:
-                raise ValueError(f"Unknown  RPC {rpc_name!r}")
-            else:
-                self.component_protocols[destination] = avro.protocol.parse(protcol)
-                destination_protocol = self.component_protocols.get(destination)
-            # TODO request from broker info
-
-        avro_message = destination_protocol.messages.get(rpc_name)
-        # else:
-        # raise ValueError("Error retrieving messages.")
-        if avro_message is None:
-            raise ValueError(f"Unknown  RPC {rpc_name!r}")
-        return avro_message.request
-
-    def _response_schema(self, rpc_name: str, remote_name: str) -> Any:
-        """Helper function to retrieve the response schema"""
+    def _remote_message(self, rpc_name: str, remote_name: str) -> Any:
+        """Helper function to retrieve the remote protocol's message definition."""
         destination_protocol = self.component_protocols.get(remote_name)
         if destination_protocol is None:
             proto = self.requestor.request(
@@ -170,18 +145,28 @@ class Component(ABC):
             )
             protcol = proto["protocol"]
             if protcol is None:
-                raise ValueError(f"Unknown  RPC {rpc_name!r}")
-            else:
-                self.component_protocols[remote_name] = avro.protocol.parse(protcol)
-                destination_protocol = self.component_protocols.get(remote_name)
-            # TODO request from broker info
+                raise ValueError(f"Unknown remote component {remote_name!r}")
+            self.component_protocols[remote_name] = avro.protocol.parse(protcol)
+            destination_protocol = self.component_protocols[remote_name]
 
         avro_message = destination_protocol.messages.get(rpc_name)
-        # else:
-        # raise ValueError("Error retrieving messages.")
         if avro_message is None:
-            raise ValueError(f"Unknown local RPC {rpc_name!r}; known: {sorted(self.protocol.messages)}")
-        return avro_message.response
+            raise ValueError(
+                f"Unknown remote RPC {rpc_name!r} on {remote_name!r}; known: {sorted(destination_protocol.messages)}"
+            )
+        return avro_message
+
+    def _request_schema(self, rpc_name: str, destination: str) -> Any:
+        """Helper function to retrieve the request schema"""
+        return self._remote_message(rpc_name=rpc_name, remote_name=destination).request
+
+    def _response_schema(self, rpc_name: str, remote_name: str) -> Any:
+        """Helper function to retrieve the response schema"""
+        return self._remote_message(rpc_name=rpc_name, remote_name=remote_name).response
+
+    def _errors_schema(self, rpc_name: str, remote_name: str) -> Any:
+        """Helper function to retrieve the declared errors union of the remote RPC."""
+        return self._remote_message(rpc_name=rpc_name, remote_name=remote_name).errors
 
     def create_message(self, datum: dict, request_name: str, destination: str) -> Message:
         """Encapsulate an Avro RPC call into an opaque Message.
@@ -198,14 +183,21 @@ class Component(ABC):
         )
 
     def _decode_reply(self, message: Message, reply: Message, rpc_name: str) -> Any:
-        """Decode the rpc reply, correlation id currently not necessary but might be needed in the future."""
+        """Decode the rpc reply, raising typed errors, correlation id currently not necessary but might be needed in the future."""
         if reply.correlation_id != message.correlation_id:
             raise RuntimeError(f"Correlation mismatch: sent {message.correlation_id}, got {reply.correlation_id}")
-        method, body = decode_payload_envelope(reply.payload)
+        method, body, is_error = decode_payload_envelope(reply.payload)
         if method != rpc_name:
             raise RuntimeError(f"RPC method mismatch: sent {rpc_name!r}, got {method!r}")
         if CODEC == "avro":
+            if is_error:
+                # Re-raise the remote error locally as its declared error class.
+                raise error_from_datum(
+                    decode_avro_datum(self._errors_schema(rpc_name, remote_name=message.destination), body)
+                )
             return decode_avro_datum(self._response_schema(rpc_name, remote_name=message.destination), body)
+        if is_error:
+            raise error_from_datum(body)
         return body
 
     def _dispatch_self_call(self, message: Message) -> Message:
@@ -292,10 +284,18 @@ class Component(ABC):
                 try:
                     reply_raw = self._dispatch(item.raw)
                 except Exception as exc:
+                    # _dispatch encodes handler errors itself; reaching here means
+                    # the reply could not be built at all, so fail the channel.
                     print(f"[{self.name}] request failed: {exc}", flush=True)
-                    self._fail(item.channel)
+                    self._fail(item.channel, exc)
                     continue
-                self._answer(item.channel, reply_raw)
+                try:
+                    self._answer(item.channel, reply_raw)
+                except Exception as exc:
+                    print(f"[{self.name}] reply failed: {exc}", flush=True)
+                    self._fail(item.channel, exc)
+            except Exception as exc:  # last resort: never let the worker thread die
+                print(f"[{self.name}] worker error: {exc}", flush=True)
             finally:
                 self._inbox.task_done()
 
@@ -315,13 +315,15 @@ class Component(ABC):
                 print(f"[{self.name}] reply dropped, client gone: {exc}", flush=True)
                 channel.closed = True
 
-    def _fail(self, channel: _ReplyChannel) -> None:
-        """Dispatch failed. Closes the socket so the blocked reader thread and the waiting client
+    def _fail(self, channel: _ReplyChannel, exc: Exception | None = None) -> None:
+        """Dispatch or reply failed. For a waiting caller, set the exception on its future;
+        otherwise close the socket so the blocked reader thread and the waiting client
         both observe EOF instead of hanging.
         """
         if channel.future is not None:
             if not channel.future.done():
-                channel.future.set_exception(RuntimeError(f"[{self.name}] request failed"))
+                detail = f": {exc}" if exc is not None else ""
+                channel.future.set_exception(RuntimeError(f"[{self.name}] request failed{detail}"))
             return
         with channel.lock:
             channel.closed = True
@@ -334,7 +336,7 @@ class Component(ABC):
     def _dispatch(self, raw: bytes) -> bytes:
         """Decode Message, invoke local responder, return encoded reply."""
         message = decode_message(raw)
-        method, body = decode_payload_envelope(message.payload)
+        method, body, _is_error = decode_payload_envelope(message.payload)
         if messages := self.protocol.messages:
             local_message = messages.get(method)
         else:
@@ -346,11 +348,18 @@ class Component(ABC):
         else:
             request_datum = body
         print(f"[{self.name}] <- {message.source} rpc={method} id={message.correlation_id}", flush=True)
-        response_datum = self.responder.invoke(local_message, request_datum)
+        try:
+            response_datum = self.responder.invoke(local_message, request_datum)
+        except Exception as exc:
+            # Handler errors are encoded into the RPC's declared errors union and
+            # travel as data inside the reply, so the broker stays opaque.
+            payload = encode_error_payload(method=method, exc=exc, errors_schema=local_message.errors, source=self.name)
+        else:
+            payload = encode_response_payload(method, response_datum, local_message.response)
         reply = Message(
             source=self.name,
             destination=message.source,
             correlation_id=message.correlation_id,
-            payload=encode_response_payload(method, response_datum, local_message.response),
+            payload=payload,
         )
         return encode_message(reply)

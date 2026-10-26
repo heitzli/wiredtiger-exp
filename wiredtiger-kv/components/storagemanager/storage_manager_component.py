@@ -7,6 +7,7 @@ from avro.protocol import Protocol
 from wiredtiger import wiredtiger_open, wiredtiger_strerror
 
 from ..component import Component
+from ..errors import WiredTigerError
 from ..queryprocessor.algebra import AbstractAlgebraNode, DELETENode, GETNode, PUTNode
 
 
@@ -46,18 +47,18 @@ class StorageManagerResponder(Responder):
                     cursor.set_key(node.key)
                     cursor.set_value(str(node.value))
                     if err := cursor.insert():
-                        raise ValueError(wiredtiger_strerror(err))
+                        raise WiredTigerError(wiredtiger_strerror(err))
                     return {"value": str(node.value)}
                 if isinstance(node, GETNode):
                     cursor.set_key(node.key)
                     if err := cursor.search():
-                        raise ValueError(wiredtiger_strerror(err))
+                        raise WiredTigerError(wiredtiger_strerror(err))
                     res = cursor.get_value()
                     return {"value": str(res)}
                 if isinstance(node, DELETENode):
                     cursor.set_key(node.key)
                     if err := cursor.remove():
-                        raise ValueError(wiredtiger_strerror(err))
+                        raise WiredTigerError(wiredtiger_strerror(err))
                     return {"value": ""}
                 else:
                     raise ValueError("Unknown AlgebraNode")

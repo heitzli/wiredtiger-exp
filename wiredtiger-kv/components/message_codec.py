@@ -6,8 +6,11 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
+import avro.errors
 import avro.io
 import avro.schema
+
+from .errors import error_record
 
 # Global toggle, either avro (binary), or json (for debugging)
 CODEC = "avro"
@@ -37,6 +40,8 @@ ENVELOPE_SCHEMA = avro.schema.parse(
             "fields": [
                 {"name": "method", "type": "string"},
                 {"name": "body", "type": "bytes"},
+                # True iff `body` is a datum of the failing RPC's declared errors union.
+                {"name": "error", "type": "boolean", "default": False},
             ],
         }
     )
@@ -130,25 +135,44 @@ def encode_payload(method: str, params_datum: dict[str, Any], request_schema: An
     """Wrap an RPC call (method + params) into opaque payload bytes."""
     if CODEC == "avro":
         body = encode_avro_datum(request_schema, params_datum)
-        return encode_avro_datum(ENVELOPE_SCHEMA, {"method": method, "body": body})
-    return json.dumps({"method": method, "body": params_datum}).encode("utf-8")
+        return encode_avro_datum(ENVELOPE_SCHEMA, {"method": method, "body": body, "error": False})
+    return json.dumps({"method": method, "body": params_datum, "error": False}).encode("utf-8")
 
 
-def decode_payload_envelope(payload: bytes) -> tuple[str, Any]:
-    """Unwrap payload into (method, body) where body is bytes (avro) or dict (json)."""
+def decode_payload_envelope(payload: bytes) -> tuple[str, Any, bool]:
+    """Unwrap payload into (method, body, is_error) where body is bytes (avro) or dict (json)."""
     if CODEC == "avro":
         datum = decode_avro_datum(ENVELOPE_SCHEMA, payload)
-        return datum["method"], datum["body"]
+        return datum["method"], datum["body"], datum["error"]
     datum = json.loads(payload.decode("utf-8"))
-    return datum["method"], datum["body"]
+    return datum["method"], datum["body"], datum.get("error", False)
 
 
 def encode_response_payload(method: str, response_datum: Any, response_schema: Any) -> bytes:
     """Wrap an RPC response into opaque payload bytes."""
     if CODEC == "avro":
         body = encode_avro_datum(response_schema, response_datum)
-        return encode_avro_datum(ENVELOPE_SCHEMA, {"method": method, "body": body})
-    return json.dumps({"method": method, "body": response_datum}).encode("utf-8")
+        return encode_avro_datum(ENVELOPE_SCHEMA, {"method": method, "body": body, "error": False})
+    return json.dumps({"method": method, "body": response_datum, "error": False}).encode("utf-8")
+
+
+def encode_error_payload(method: str, exc: Exception, errors_schema: Any, source: str | None = None) -> bytes:
+    """Wrap a failed RPC call into opaque payload bytes.
+
+    The error datum is encoded against the RPC's declared ``errors`` union
+    (context: "string" branch for undeclared exceptions, record branch for the
+    declared ones). Falls back to the string branch when the schema does not
+    accept the error record, e.g. a protocol that declares no named errors.
+    """
+
+    record = error_record(exc, source=source)
+    if CODEC == "avro":
+        try:
+            body = encode_avro_datum(errors_schema, record)
+        except avro.errors.AvroTypeException:
+            body = encode_avro_datum(errors_schema, f"{type(exc).__name__}: {exc}")
+        return encode_avro_datum(ENVELOPE_SCHEMA, {"method": method, "body": body, "error": True})
+    return json.dumps({"method": method, "body": record, "error": True}).encode("utf-8")
 
 
 def message_to_dict(message: Message) -> dict[str, Any]:

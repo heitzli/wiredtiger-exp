@@ -1,0 +1,21 @@
+schema kv.errors;
+
+@namespace("kv.errors")
+error QueryProcessorError {
+  string error;
+  string component = "";
+  string kind = "QueryProcessorError";
+}
+@namespace("kv.errors")
+error KVQLSyntaxError {
+  string error;
+  string component = "";
+  string kind = "KVQLSyntaxError";
+}
+
+@namespace("kv.errors")
+error WiredTigerError {
+  string error;
+  string component = "";
+  string kind = "WiredTigerError";
+}

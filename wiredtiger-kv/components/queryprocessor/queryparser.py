@@ -1,14 +1,11 @@
 from antlr4 import CommonTokenStream, InputStream
 from antlr4.error.ErrorListener import ErrorListener
 
+from ..errors import KVQLSyntaxError
 from .algebra import AbstractAlgebraNode, DELETENode, GETNode, PUTNode
 from .generated.KVQLLexer import KVQLLexer
 from .generated.KVQLParser import KVQLParser
 from .generated.KVQLVisitor import KVQLVisitor
-
-
-class KVQLSyntaxError(Exception):
-    pass
 
 
 class RaisingErrorListener(ErrorListener):

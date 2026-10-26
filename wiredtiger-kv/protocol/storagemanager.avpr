@@ -1,6 +1,9 @@
 {
   "messages": {
     "execute": {
+      "errors": [
+        "kv.errors.WiredTigerError"
+      ],
       "request": [
         {
           "name": "request",
@@ -70,6 +73,69 @@
       "name": "AlgebraNode",
       "namespace": "kv.queryprocessor.algebra",
       "type": "record"
+    },
+    {
+      "fields": [
+        {
+          "name": "error",
+          "type": "string"
+        },
+        {
+          "default": "",
+          "name": "component",
+          "type": "string"
+        },
+        {
+          "default": "QueryProcessorError",
+          "name": "kind",
+          "type": "string"
+        }
+      ],
+      "name": "QueryProcessorError",
+      "namespace": "kv.errors",
+      "type": "error"
+    },
+    {
+      "fields": [
+        {
+          "name": "error",
+          "type": "string"
+        },
+        {
+          "default": "",
+          "name": "component",
+          "type": "string"
+        },
+        {
+          "default": "KVQLSyntaxError",
+          "name": "kind",
+          "type": "string"
+        }
+      ],
+      "name": "KVQLSyntaxError",
+      "namespace": "kv.errors",
+      "type": "error"
+    },
+    {
+      "fields": [
+        {
+          "name": "error",
+          "type": "string"
+        },
+        {
+          "default": "",
+          "name": "component",
+          "type": "string"
+        },
+        {
+          "default": "WiredTigerError",
+          "name": "kind",
+          "type": "string"
+        }
+      ],
+      "name": "WiredTigerError",
+      "namespace": "kv.errors",
+      "type": "error"
     },
     {
       "fields": [

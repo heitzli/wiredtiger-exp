@@ -1,6 +1,6 @@
 @namespace("kv.queryprocessor")
 protocol Queryprocessor{
-
+  import idl "errors.avdl";
   record EvaluateQueryRequest {
     string query;
   }
@@ -9,7 +9,6 @@ protocol Queryprocessor{
     string value;
   }
 
-  // TODO add error response type
-  EvaluateQueryResponse evaluate(EvaluateQueryRequest request);
+  EvaluateQueryResponse evaluate(EvaluateQueryRequest request) throws kv.errors.QueryProcessorError, kv.errors.KVQLSyntaxError, kv.errors.WiredTigerError;
 
 }

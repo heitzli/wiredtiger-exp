@@ -1,5 +1,4 @@
 from pathlib import Path
-from typing import Any
 
 from avro.ipc import Responder
 from avro.protocol import Protocol

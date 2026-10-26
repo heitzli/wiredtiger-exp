@@ -4,6 +4,7 @@ import avro.ipc
 from avro.protocol import Protocol
 
 from ..component import Component
+from ..errors import ComponentError, QueryProcessorError
 from .queryparser import parse_kvql
 
 
@@ -23,15 +24,17 @@ class QueryProcessorResponder(avro.ipc.Responder):
         query = inner["query"]
         try:
             parsed_query = parse_kvql(query)
-            # TODO send parsed query to storage manager
             res = self.qp.call_remote(
                 destination="storagemanager",
                 rpc_name="execute",
                 params={"request": {"plan": {"node": parsed_query.to_avro_node()}}},
             )
             result = res["value"]
+        except ComponentError:
+            # Typed pass-through
+            raise
         except Exception as e:
-            raise e
+            raise QueryProcessorError(str(e), source=self.qp.name) from e
         return {"value": result}
 
 
