@@ -3,3 +3,6 @@ WT_HOME
 .mypy**
 **__pycache__
 **.ruff_cache
+**.antlr
+**/generated/**
+!**/generated/.gitkeep

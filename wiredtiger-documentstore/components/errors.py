@@ -44,10 +44,10 @@ class QueryProcessorError(ComponentError):
     type_name = "QueryProcessorError"
 
 
-class KVQLSyntaxError(ComponentError):
+class DocQLSyntaxError(ComponentError):
     """Raised by the query processor when a query does not parse."""
 
-    type_name = "KVQLSyntaxError"
+    type_name = "DocQLSyntaxError"
 
 
 class RemoteError(ComponentError):
@@ -57,7 +57,7 @@ class RemoteError(ComponentError):
 
 
 ERROR_REGISTRY: dict[str, type[ComponentError]] = {
-    cls.type_name: cls for cls in (WiredTigerError, QueryProcessorError, KVQLSyntaxError)
+    cls.type_name: cls for cls in (WiredTigerError, QueryProcessorError, DocQLSyntaxError)
 }
 
 
