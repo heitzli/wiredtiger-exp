@@ -3,7 +3,7 @@
     "evaluate": {
       "errors": [
         "document.errors.QueryProcessorError",
-        "document.errors.DocumentQLSyntaxError",
+        "document.errors.DocQLSyntaxError",
         "document.errors.WiredTigerError"
       ],
       "request": [
@@ -72,12 +72,12 @@
           "type": "string"
         },
         {
-          "default": "DocumentQLSyntaxError",
+          "default": "DocQLSyntaxError",
           "name": "kind",
           "type": "string"
         }
       ],
-      "name": "DocumentQLSyntaxError",
+      "name": "DocQLSyntaxError",
       "namespace": "document.errors",
       "type": "error"
     },

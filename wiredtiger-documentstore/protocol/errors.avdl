@@ -15,10 +15,10 @@ error QueryProcessorError {
 }
 
 @namespace("document.errors")
-error DocumentQLSyntaxError {
+error DocQLSyntaxError {
   string error;
   string component = "";
-  string kind = "DocumentQLSyntaxError";
+  string kind = "DocQLSyntaxError";
 }
 
 @namespace("document.errors")

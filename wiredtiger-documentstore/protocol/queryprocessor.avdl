@@ -13,6 +13,6 @@ protocol Queryprocessor{
     union {null, map<string>} custom = null;
   }
 
-  EvaluateQueryResponse evaluate(EvaluateQueryRequest request) throws document.errors.QueryProcessorError, document.errors.DocumentQLSyntaxError, document.errors.WiredTigerError;
+  EvaluateQueryResponse evaluate(EvaluateQueryRequest request) throws document.errors.QueryProcessorError, document.errors.DocQLSyntaxError, document.errors.WiredTigerError;
 
 }

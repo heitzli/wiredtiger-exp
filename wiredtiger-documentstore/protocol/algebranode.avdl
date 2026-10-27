@@ -3,5 +3,100 @@ schema document.queryprocessor.algebra.AlgebraNode;
 @namespace("document.queryprocessor.algebra")
 record AlgebraNode {
   // Order matters for union resolution! especially if similar fields
-  union {null} node;
+  union {CreateTable, DeleteTable, Delete, Insert, Update, TableScan, Projection, Selection} node;
+}
+
+@namespace("document.queryprocessor.algebra")
+record CreateTable {
+  string table;
+  union {null, map<string>} custom = null;
+}
+
+// TODO check resolving since same fields as createTable
+@namespace("document.queryprocessor.algebra")
+record DeleteTable {
+  string table;
+  union {null, map<string>} custom = null;
+}
+
+@namespace("document.queryprocessor.algebra")
+record Delete {
+  string table;
+  Expr? expr = null;
+  union {null, map<string>} custom = null;
+}
+
+@namespace("document.queryprocessor.algebra")
+record Insert {
+  string table;
+  array<map<Literal>> values;
+  union {null, map<string>} custom = null;
+}
+
+@namespace("document.queryprocessor.algebra")
+record Update {
+  string table;
+  array<kvpair> kv;
+  Expr? expr = null;
+  union {null, map<string>} custom = null;
+}
+
+@namespace("document.queryprocessor.algebra")
+record kvpair {
+  string key;
+  Literal value;
+  union {null, map<string>} custom = null;
+}
+
+@namespace("document.queryprocessor.algebra")
+record TableScan {
+    string table;
+    union {null, map<string>} custom = null;
+}
+
+@namespace("document.queryprocessor.algebra")
+record Projection {
+    array<AttributeRef> attributes;
+    AlgebraNode child;
+    union {null, map<string>} custom = null;
+}
+
+@namespace("document.queryprocessor.algebra")
+record Selection {
+    AlgebraNode child;
+    Expr expr;
+    union {null, map<string>} custom = null;
+}
+
+
+@namespace("document.queryprocessor.algebra")
+record Expr {
+  union {Literal, BinOp, UnOp, AttributeRef} expr;
+}
+
+@namespace("document.queryprocessor.algebra")
+record AttributeRef {
+  string name;
+  union {null, map<string>} custom = null;
+}
+
+@namespace("document.queryprocessor.algebra")
+record Literal {
+  union {int, long, float, double, string, null} value;
+}
+
+
+@namespace("document.queryprocessor.algebra")
+record BinOp {
+  string op;
+  Expr left;
+  Expr right;
+  union {null, map<string>} custom = null;
+}
+
+@namespace("document.queryprocessor.algebra")
+record UnOp {
+  string op;
+  Expr expr;
+  union {null, map<string>} custom = null;
 }

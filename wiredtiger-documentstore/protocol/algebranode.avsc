@@ -3,7 +3,344 @@
     {
       "name": "node",
       "type": [
-        "null"
+        {
+          "fields": [
+            {
+              "name": "table",
+              "type": "string"
+            },
+            {
+              "default": null,
+              "name": "custom",
+              "type": [
+                "null",
+                {
+                  "type": "map",
+                  "values": "string"
+                }
+              ]
+            }
+          ],
+          "name": "CreateTable",
+          "type": "record"
+        },
+        {
+          "fields": [
+            {
+              "name": "table",
+              "type": "string"
+            },
+            {
+              "default": null,
+              "name": "custom",
+              "type": [
+                "null",
+                {
+                  "type": "map",
+                  "values": "string"
+                }
+              ]
+            }
+          ],
+          "name": "DeleteTable",
+          "type": "record"
+        },
+        {
+          "fields": [
+            {
+              "name": "table",
+              "type": "string"
+            },
+            {
+              "default": null,
+              "name": "expr",
+              "type": [
+                "null",
+                {
+                  "fields": [
+                    {
+                      "name": "expr",
+                      "type": [
+                        {
+                          "fields": [
+                            {
+                              "name": "value",
+                              "type": [
+                                "int",
+                                "long",
+                                "float",
+                                "double",
+                                "string",
+                                "null"
+                              ]
+                            }
+                          ],
+                          "name": "Literal",
+                          "type": "record"
+                        },
+                        {
+                          "fields": [
+                            {
+                              "name": "op",
+                              "type": "string"
+                            },
+                            {
+                              "name": "left",
+                              "type": "Expr"
+                            },
+                            {
+                              "name": "right",
+                              "type": "Expr"
+                            },
+                            {
+                              "default": null,
+                              "name": "custom",
+                              "type": [
+                                "null",
+                                {
+                                  "type": "map",
+                                  "values": "string"
+                                }
+                              ]
+                            }
+                          ],
+                          "name": "BinOp",
+                          "type": "record"
+                        },
+                        {
+                          "fields": [
+                            {
+                              "name": "op",
+                              "type": "string"
+                            },
+                            {
+                              "name": "expr",
+                              "type": "Expr"
+                            },
+                            {
+                              "default": null,
+                              "name": "custom",
+                              "type": [
+                                "null",
+                                {
+                                  "type": "map",
+                                  "values": "string"
+                                }
+                              ]
+                            }
+                          ],
+                          "name": "UnOp",
+                          "type": "record"
+                        },
+                        {
+                          "fields": [
+                            {
+                              "name": "name",
+                              "type": "string"
+                            },
+                            {
+                              "default": null,
+                              "name": "custom",
+                              "type": [
+                                "null",
+                                {
+                                  "type": "map",
+                                  "values": "string"
+                                }
+                              ]
+                            }
+                          ],
+                          "name": "AttributeRef",
+                          "type": "record"
+                        }
+                      ]
+                    }
+                  ],
+                  "name": "Expr",
+                  "type": "record"
+                }
+              ]
+            },
+            {
+              "default": null,
+              "name": "custom",
+              "type": [
+                "null",
+                {
+                  "type": "map",
+                  "values": "string"
+                }
+              ]
+            }
+          ],
+          "name": "Delete",
+          "type": "record"
+        },
+        {
+          "fields": [
+            {
+              "name": "table",
+              "type": "string"
+            },
+            {
+              "name": "values",
+              "type": {
+                "items": {
+                  "type": "map",
+                  "values": "Literal"
+                },
+                "type": "array"
+              }
+            },
+            {
+              "default": null,
+              "name": "custom",
+              "type": [
+                "null",
+                {
+                  "type": "map",
+                  "values": "string"
+                }
+              ]
+            }
+          ],
+          "name": "Insert",
+          "type": "record"
+        },
+        {
+          "fields": [
+            {
+              "name": "table",
+              "type": "string"
+            },
+            {
+              "name": "kv",
+              "type": {
+                "items": {
+                  "fields": [
+                    {
+                      "name": "key",
+                      "type": "string"
+                    },
+                    {
+                      "name": "value",
+                      "type": "Literal"
+                    },
+                    {
+                      "default": null,
+                      "name": "custom",
+                      "type": [
+                        "null",
+                        {
+                          "type": "map",
+                          "values": "string"
+                        }
+                      ]
+                    }
+                  ],
+                  "name": "kvpair",
+                  "type": "record"
+                },
+                "type": "array"
+              }
+            },
+            {
+              "default": null,
+              "name": "expr",
+              "type": [
+                "null",
+                "Expr"
+              ]
+            },
+            {
+              "default": null,
+              "name": "custom",
+              "type": [
+                "null",
+                {
+                  "type": "map",
+                  "values": "string"
+                }
+              ]
+            }
+          ],
+          "name": "Update",
+          "type": "record"
+        },
+        {
+          "fields": [
+            {
+              "name": "table",
+              "type": "string"
+            },
+            {
+              "default": null,
+              "name": "custom",
+              "type": [
+                "null",
+                {
+                  "type": "map",
+                  "values": "string"
+                }
+              ]
+            }
+          ],
+          "name": "TableScan",
+          "type": "record"
+        },
+        {
+          "fields": [
+            {
+              "name": "attributes",
+              "type": {
+                "items": "AttributeRef",
+                "type": "array"
+              }
+            },
+            {
+              "name": "child",
+              "type": "AlgebraNode"
+            },
+            {
+              "default": null,
+              "name": "custom",
+              "type": [
+                "null",
+                {
+                  "type": "map",
+                  "values": "string"
+                }
+              ]
+            }
+          ],
+          "name": "Projection",
+          "type": "record"
+        },
+        {
+          "fields": [
+            {
+              "name": "child",
+              "type": "AlgebraNode"
+            },
+            {
+              "name": "expr",
+              "type": "Expr"
+            },
+            {
+              "default": null,
+              "name": "custom",
+              "type": [
+                "null",
+                {
+                  "type": "map",
+                  "values": "string"
+                }
+              ]
+            }
+          ],
+          "name": "Selection",
+          "type": "record"
+        }
       ]
     }
   ],

@@ -17,7 +17,7 @@ q4 = parse_docql(
 q4.print_tree()
 
 print()
-q5 = parse_docql("INSERT INTO test VALUES ({'name':'luc', 'age':27, 'height':1.79}, {}, {'name':'test', 'age':29})")
+q5 = parse_docql("INSERT INTO test VALUES ({'name':'luc', 'age':27, 'height':1.79, 'hobby': NULL})")
 q5.print_tree()
 print()
 q4 = parse_docql("DELETE FROM test123 WHERE heigt = 1.8 AND age = 18 OR name = 'andy';")

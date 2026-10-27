@@ -16,6 +16,7 @@ class Attribute(BaseModel):
 
 class AbstractAlgebraNode(BaseModel, ABC):
     model_config = ConfigDict(frozen=True)
+    custom: dict[str, str] | None = None
 
     @abstractmethod
     def children(self) -> list[AbstractAlgebraNode]: ...

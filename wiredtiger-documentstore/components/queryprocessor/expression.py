@@ -8,6 +8,7 @@ AllowedValue: TypeAlias = str | int | float | None
 
 class Expr(BaseModel, ABC):
     model_config = ConfigDict(frozen=True)
+    custom: dict[str, str] | None = None
 
 
 def pretty(expr: Expr) -> str:
