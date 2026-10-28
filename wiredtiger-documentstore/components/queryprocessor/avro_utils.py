@@ -43,7 +43,13 @@ def from_avro_expr(data: dict) -> Expr:
     kind = branch.get("kind")
 
     if kind == "LiteralExpr":
-        return LiteralExpr(value=branch["value"], type=branch["type"])
+        value = branch["value"]
+        # avro-python writes every numeric union member as double (AVRO-973),
+        # so a parsed int (27) arrives as 27.0 while type still says "int";
+        # restore the tagged type. See protocol/algebranode.avdl LiteralExpr.
+        if branch["type"] == "int":
+            value = int(value)
+        return LiteralExpr(value=value, type=branch["type"])
 
     elif kind == "BinOp":
         return BinOp(op=branch["op"], left=from_avro_expr(branch["left"]), right=from_avro_expr(branch["right"]))
@@ -150,12 +156,7 @@ def from_avro_node(data: dict) -> AbstractAlgebraNode:
         return Insert(
             kind=kind,
             table=branch["table"],
-            values=[
-                {
-                    key: LiteralExpr(value=value["value"], type=value["type"]) for key, value in row.items()
-                }  # TODO check if this is correct
-                for row in branch["values"]
-            ],
+            values=[{key: from_avro_expr(value) for key, value in row.items()} for row in branch["values"]],  # type: ignore
             custom=branch.get("custom"),
         )
 
@@ -163,15 +164,7 @@ def from_avro_node(data: dict) -> AbstractAlgebraNode:
         return Update(
             kind=kind,
             table=branch["table"],
-            kv=[
-                (
-                    item["key"],
-                    LiteralExpr(
-                        value=item["value"]["value"], type=item["value"]["type"]
-                    ),  # TODO check if this is correct
-                )
-                for item in branch["kv"]
-            ],
+            kv=[(item["key"], from_avro_expr(item["value"])) for item in branch["kv"]],  # type: ignore
             expr=(from_avro_expr(branch["expr"]) if branch.get("expr") is not None else None),
             custom=branch.get("custom"),
         )

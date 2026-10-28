@@ -93,6 +93,16 @@ record AttributeRef {
 record LiteralExpr {
   string kind = "LiteralExpr";
   string type;
+  // Order matters. avro-python (1.12.2, AVRO-973) picks the LAST branch whose
+  // validate() passes, and int validates for long/float/double as well, so with
+  // narrow->wide order every numeric datum is written as double: the SM
+  // receives 27.0 while the `type` tag stays "int" and stores b"27.0".
+  // Lossless for |value| <= 2^53 (Python float -> double is always lossless);
+  // only ints beyond 2^53 lose precision on the wire.
+  // Do NOT "fix" this by reordering wide->narrow: that makes ints exact but
+  // pushes floats into the float32 branch (1.79 -> 1.7899999618530273).
+  // If exact int round-trips are ever needed, normalize on decode instead:
+  // from_avro_expr: if type == "int": value = int(value).
   union {int, long, float, double, string, null} value;
 }
 

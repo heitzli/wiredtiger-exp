@@ -149,11 +149,17 @@ class StorageManagerResponder(Responder):
 
 class StorageManagerComponent(Component):
     def __init__(
-        self, name: str, broker_protocol_path: Path, protocol_path: Path, broker_socket: str, component_socket: str
+        self,
+        name: str,
+        broker_protocol_path: Path,
+        protocol_path: Path,
+        broker_socket: str,
+        component_socket: str,
+        wiredtiger_home: str = "WT_DOC_HOME",
     ) -> None:
         super().__init__(name, broker_protocol_path, protocol_path, broker_socket, component_socket)
         self.new_db = False
-        self.db_path = "WT_DOC_HOME"
+        self.db_path = wiredtiger_home
         self._init_wt_folder()
         self.connection: wiredtiger.Connection = wiredtiger_open(
             self.db_path, "create,log=(enabled),statistics=(all),transaction_sync=(enabled)"
