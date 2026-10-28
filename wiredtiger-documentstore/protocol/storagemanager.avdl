@@ -8,8 +8,13 @@ protocol StorageManager {
     union {null, map<string>} custom = null;
   }
 
+  record WTValue {
+    string type;
+    bytes value;
+  }
+
   record ExecuteQueryResponse {
-    string value;
+    map<WTValue> value;
     union {null, map<string>} custom = null;
   }
 
