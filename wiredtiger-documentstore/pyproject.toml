@@ -17,5 +17,13 @@ dev = [
     "pytest>=9.2.0",
 ]
 
+[tool.pytest.ini_options]
+filterwarnings = [
+    # Benign teardown noise: fixtures close broker/component sockets while their
+    # daemon accept/read threads are still blocked in accept()/recv(), so those
+    # threads (on macOS) die with ConnectionAbortedError (errno 53 or 9).
+    "ignore:Exception in thread:pytest.PytestUnhandledThreadExceptionWarning",
+]
+
 [tool.uv.sources]
 wiredtiger = { git = "https://github.com/heitzli/wiredtiger.git", subdirectory = "lang/python" }
