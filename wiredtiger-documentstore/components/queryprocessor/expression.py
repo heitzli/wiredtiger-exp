@@ -37,6 +37,7 @@ class AttributeRef(Expr):
 
 class LiteralExpr(Expr):
     kind: Literal["LiteralExpr"] = "LiteralExpr"
+    type: str
     value: AllowedValue
 
 

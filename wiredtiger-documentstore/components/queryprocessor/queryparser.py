@@ -106,14 +106,14 @@ class DocQLSyntaxExtractor(DocQLVisitor):
 
     def visitValue(self, ctx: DocQLParser.ValueContext) -> LiteralExpr:  # type: ignore
         if ctx.STRING():
-            return LiteralExpr(value=ctx.STRING().getText()[1:-1].replace("''", "'"))  # type: ignore
+            return LiteralExpr(value=ctx.STRING().getText()[1:-1].replace("''", "'"), type="string")  # type: ignore
 
         if ctx.NUMBER():
             text = ctx.NUMBER().getText()  # type: ignore
-            return LiteralExpr(value=float(text) if "." in text else int(text))
+            return LiteralExpr(value=float(text) if "." in text else int(text), type="float" if "." in text else "int")
 
         if ctx.NULL():
-            return LiteralExpr(value=None)
+            return LiteralExpr(value=None, type="null")
 
         raise ValueError(f"Unsupported value: {ctx.getText()}")
 

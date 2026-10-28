@@ -92,6 +92,7 @@ record AttributeRef {
 @namespace("document.queryprocessor.algebra")
 record LiteralExpr {
   string kind = "LiteralExpr";
+  string type;
   union {int, long, float, double, string, null} value;
 }
 

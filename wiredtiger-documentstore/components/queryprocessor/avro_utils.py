@@ -21,7 +21,7 @@ from .expression import (
 
 def to_avro_expr(expr: Expr) -> dict:
     if isinstance(expr, LiteralExpr):
-        branch = {"kind": "LiteralExpr", "value": expr.value}
+        branch = {"kind": "LiteralExpr", "value": expr.value, "type": expr.type}
 
     elif isinstance(expr, BinOp):
         branch = {"kind": "BinOp", "op": expr.op, "left": to_avro_expr(expr.left), "right": to_avro_expr(expr.right)}
@@ -43,7 +43,7 @@ def from_avro_expr(data: dict) -> Expr:
     kind = branch.get("kind")
 
     if kind == "LiteralExpr":
-        return LiteralExpr(value=branch["value"])
+        return LiteralExpr(value=branch["value"], type=branch["type"])
 
     elif kind == "BinOp":
         return BinOp(op=branch["op"], left=from_avro_expr(branch["left"]), right=from_avro_expr(branch["right"]))
@@ -59,7 +59,7 @@ def from_avro_expr(data: dict) -> Expr:
 
 
 def to_avro_literal(literal: LiteralExpr) -> dict:
-    return {"kind": "LiteralExpr", "value": literal.value}
+    return {"kind": "LiteralExpr", "value": literal.value, "type": literal.type}
 
 
 def to_avro_node(node: AbstractAlgebraNode) -> dict:
@@ -150,7 +150,12 @@ def from_avro_node(data: dict) -> AbstractAlgebraNode:
         return Insert(
             kind=kind,
             table=branch["table"],
-            values=[{key: LiteralExpr(value=value["value"]) for key, value in row.items()} for row in branch["values"]],
+            values=[
+                {
+                    key: LiteralExpr(value=value["value"], type=value["type"]) for key, value in row.items()
+                }  # TODO check if this is correct
+                for row in branch["values"]
+            ],
             custom=branch.get("custom"),
         )
 
@@ -161,7 +166,9 @@ def from_avro_node(data: dict) -> AbstractAlgebraNode:
             kv=[
                 (
                     item["key"],
-                    LiteralExpr(value=item["value"]["value"]),
+                    LiteralExpr(
+                        value=item["value"]["value"], type=item["value"]["type"]
+                    ),  # TODO check if this is correct
                 )
                 for item in branch["kv"]
             ],
