@@ -65,7 +65,7 @@ def error_record(exc: Exception, source: str | None = None) -> dict[str, str]:
     """Build the datum for the declared errors union of the failing RPC."""
     if isinstance(exc, ComponentError):
         return {
-            "error": str(exc),
+            "error": exc.message,
             "component": exc.source or source or "",
             "kind": exc.type_name,
         }
