@@ -17,4 +17,5 @@ wiredtiger = { git = "https://github.com/heitzli/wiredtiger.git", subdirectory =
 [dependency-groups]
 dev = [
     "antlr4-tools>=0.2.2",
+    "pytest>=9.2.0",
 ]

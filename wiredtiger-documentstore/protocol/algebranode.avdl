@@ -8,6 +8,7 @@ record AlgebraNode {
 
 @namespace("document.queryprocessor.algebra")
 record CreateTable {
+  string kind = "CreateTable";
   string table;
   union {null, map<string>} custom = null;
 }
@@ -15,12 +16,14 @@ record CreateTable {
 // TODO check resolving since same fields as createTable
 @namespace("document.queryprocessor.algebra")
 record DeleteTable {
+  string kind = "DeleteTable";
   string table;
   union {null, map<string>} custom = null;
 }
 
 @namespace("document.queryprocessor.algebra")
 record Delete {
+  string kind = "Delete";
   string table;
   Expr? expr = null;
   union {null, map<string>} custom = null;
@@ -28,13 +31,15 @@ record Delete {
 
 @namespace("document.queryprocessor.algebra")
 record Insert {
+  string kind = "Insert";
   string table;
-  array<map<Literal>> values;
+  array<map<LiteralExpr>> values;
   union {null, map<string>} custom = null;
 }
 
 @namespace("document.queryprocessor.algebra")
 record Update {
+  string kind = "Update";
   string table;
   array<kvpair> kv;
   Expr? expr = null;
@@ -44,50 +49,56 @@ record Update {
 @namespace("document.queryprocessor.algebra")
 record kvpair {
   string key;
-  Literal value;
+  LiteralExpr value;
   union {null, map<string>} custom = null;
 }
 
 @namespace("document.queryprocessor.algebra")
 record TableScan {
-    string table;
-    union {null, map<string>} custom = null;
+  string kind = "TableScan";
+  string table;
+  union {null, map<string>} custom = null;
 }
 
 @namespace("document.queryprocessor.algebra")
 record Projection {
-    array<AttributeRef> attributes;
-    AlgebraNode child;
-    union {null, map<string>} custom = null;
+  string kind = "Projection";
+  array<AttributeRef> attributes;
+  AlgebraNode child;
+  union {null, map<string>} custom = null;
 }
 
 @namespace("document.queryprocessor.algebra")
 record Selection {
-    AlgebraNode child;
-    Expr expr;
-    union {null, map<string>} custom = null;
+  string kind = "Selection";
+  AlgebraNode child;
+  Expr expr;
+  union {null, map<string>} custom = null;
 }
 
 
 @namespace("document.queryprocessor.algebra")
 record Expr {
-  union {Literal, BinOp, UnOp, AttributeRef} expr;
+  union {LiteralExpr, BinOp, UnOp, AttributeRef} expr;
 }
 
 @namespace("document.queryprocessor.algebra")
 record AttributeRef {
+  string kind = "AttributeRef";
   string name;
   union {null, map<string>} custom = null;
 }
 
 @namespace("document.queryprocessor.algebra")
-record Literal {
+record LiteralExpr {
+  string kind = "LiteralExpr";
   union {int, long, float, double, string, null} value;
 }
 
 
 @namespace("document.queryprocessor.algebra")
 record BinOp {
+  string kind = "BinOp";
   string op;
   Expr left;
   Expr right;
@@ -96,6 +107,7 @@ record BinOp {
 
 @namespace("document.queryprocessor.algebra")
 record UnOp {
+  string kind = "UnOp";
   string op;
   Expr expr;
   union {null, map<string>} custom = null;

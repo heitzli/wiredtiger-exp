@@ -1,5 +1,5 @@
 from abc import ABC
-from typing import TypeAlias
+from typing import Literal, TypeAlias
 
 from pydantic import BaseModel, ConfigDict
 
@@ -28,6 +28,7 @@ def pretty(expr: Expr) -> str:
 
 
 class AttributeRef(Expr):
+    kind: Literal["AttributeRef"] = "AttributeRef"
     name: str
 
     def __str__(self) -> str:
@@ -35,15 +36,18 @@ class AttributeRef(Expr):
 
 
 class LiteralExpr(Expr):
+    kind: Literal["LiteralExpr"] = "LiteralExpr"
     value: AllowedValue
 
 
 class BinOp(Expr):
+    kind: Literal["BinOp"] = "BinOp"
     op: str
     left: Expr
     right: Expr
 
 
 class UnOp(Expr):
+    kind: Literal["UnOp"] = "UnOp"
     op: str
     expr: Expr
