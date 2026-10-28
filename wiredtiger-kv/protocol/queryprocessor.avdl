@@ -1,12 +1,15 @@
 @namespace("kv.queryprocessor")
 protocol Queryprocessor{
   import idl "errors.avdl";
+
   record EvaluateQueryRequest {
     string query;
+    union {null, map<string>} custom = null;
   }
 
   record EvaluateQueryResponse {
     string value;
+    union {null, map<string>} custom = null;
   }
 
   EvaluateQueryResponse evaluate(EvaluateQueryRequest request) throws kv.errors.QueryProcessorError, kv.errors.KVQLSyntaxError, kv.errors.WiredTigerError;

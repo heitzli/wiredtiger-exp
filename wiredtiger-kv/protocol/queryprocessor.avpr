@@ -86,6 +86,17 @@
         {
           "name": "query",
           "type": "string"
+        },
+        {
+          "default": null,
+          "name": "custom",
+          "type": [
+            "null",
+            {
+              "type": "map",
+              "values": "string"
+            }
+          ]
         }
       ],
       "name": "EvaluateQueryRequest",
@@ -96,6 +107,17 @@
         {
           "name": "value",
           "type": "string"
+        },
+        {
+          "default": null,
+          "name": "custom",
+          "type": [
+            "null",
+            {
+              "type": "map",
+              "values": "string"
+            }
+          ]
         }
       ],
       "name": "EvaluateQueryResponse",

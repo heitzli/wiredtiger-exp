@@ -67,6 +67,17 @@
         {
           "name": "protocol",
           "type": "string"
+        },
+        {
+          "default": null,
+          "name": "custom",
+          "type": [
+            "null",
+            {
+              "type": "map",
+              "values": "string"
+            }
+          ]
         }
       ],
       "name": "RegisterComponentRequest",
@@ -77,6 +88,17 @@
         {
           "name": "result",
           "type": "int"
+        },
+        {
+          "default": null,
+          "name": "custom",
+          "type": [
+            "null",
+            {
+              "type": "map",
+              "values": "string"
+            }
+          ]
         }
       ],
       "name": "RegisterComponentResponse",
@@ -87,6 +109,17 @@
         {
           "name": "name",
           "type": "string"
+        },
+        {
+          "default": null,
+          "name": "custom",
+          "type": [
+            "null",
+            {
+              "type": "map",
+              "values": "string"
+            }
+          ]
         }
       ],
       "name": "ComponentProtocolRequest",
@@ -100,6 +133,17 @@
           "type": [
             "null",
             "string"
+          ]
+        },
+        {
+          "default": null,
+          "name": "custom",
+          "type": [
+            "null",
+            {
+              "type": "map",
+              "values": "string"
+            }
           ]
         }
       ],

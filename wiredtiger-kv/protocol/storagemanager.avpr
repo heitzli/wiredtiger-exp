@@ -142,6 +142,17 @@
         {
           "name": "plan",
           "type": "kv.queryprocessor.algebra.AlgebraNode"
+        },
+        {
+          "default": null,
+          "name": "custom",
+          "type": [
+            "null",
+            {
+              "type": "map",
+              "values": "string"
+            }
+          ]
         }
       ],
       "name": "ExecuteQueryRequest",
@@ -152,6 +163,17 @@
         {
           "name": "value",
           "type": "string"
+        },
+        {
+          "default": null,
+          "name": "custom",
+          "type": [
+            "null",
+            {
+              "type": "map",
+              "values": "string"
+            }
+          ]
         }
       ],
       "name": "ExecuteQueryResponse",
