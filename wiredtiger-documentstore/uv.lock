@@ -274,7 +274,7 @@ wheels = [
 [[package]]
 name = "wiredtiger"
 version = "12.0.0"
-source = { git = "https://github.com/heitzli/wiredtiger.git?subdirectory=lang%2Fpython#0001f220bc779cb0f3025412013ebcebb8033d88" }
+source = { git = "https://github.com/heitzli/wiredtiger.git?subdirectory=lang%2Fpython#fa05de5705ef002bd2a351a777494017127bd053" }
 dependencies = [
     { name = "cmake" },
     { name = "ninja" },

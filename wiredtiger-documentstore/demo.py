@@ -12,19 +12,21 @@ if __name__ == "__main__":
     )
 
     try:
-        val1 = client._query(query="CREATE TABLE test123;")
+        val1 = client._query(query="CREATE TABLE test;")
         print(f" get received : {val1}")
     except Exception as e:
         print(e)
 
     try:
-        val2 = client._query(query="DELETE TABLE test123;")
+        val2 = client._query(
+            query="INSERT INTO test VALUES ({'name':'luc', 'age':27, 'height':1.79, 'hobby': NULL}, {}, {'name':'test'})"
+        )
         print(f" get received : {val2}")
     except Exception as e:
         print(e)
 
     try:
-        val3 = client._query(query="DELETE TABLE test123;")
-        print(f" get received : {val3}")
+        val1 = client._query(query="Delete TABLE test;")
+        print(f" get received : {val1}")
     except Exception as e:
         print(e)

@@ -11,11 +11,11 @@ dependencies = [
     "wiredtiger",
 ]
 
-[tool.uv.sources]
-wiredtiger = { git = "https://github.com/heitzli/wiredtiger.git", subdirectory = "lang/python" }
-
 [dependency-groups]
 dev = [
     "antlr4-tools>=0.2.2",
     "pytest>=9.2.0",
 ]
+
+[tool.uv.sources]
+wiredtiger = { git = "https://github.com/heitzli/wiredtiger.git", subdirectory = "lang/python" }
