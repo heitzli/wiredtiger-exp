@@ -6,3 +6,6 @@ WT_HOME
 **.antlr
 **/generated/**
 !**/generated/.gitkeep
+
+**.avsc
+**.avpr
