@@ -1,5 +1,4 @@
 import os
-import struct
 import uuid
 from pathlib import Path
 
@@ -17,10 +16,13 @@ from ..queryprocessor import (
     CreateTable,
     Delete,
     DeleteTable,
+    Projection,
     Update,
     dict_satisfies,
     from_avro_node,
 )
+from .execution_node import ExecBuilder, ProjectionExecNode
+from .value_utils import decode_value, encode_value
 
 
 class StorageManagerResponder(Responder):
@@ -59,6 +61,10 @@ class StorageManagerResponder(Responder):
 
             case "Update":
                 return self._handle_update(node=node)  # type: ignore
+
+            case "Projection":
+                # NOTE, TableScan and Selection are always wrapped by a Projection
+                return self._handle_projection(node=node)  # type: ignore
 
     def _handle_create_table(self, node: CreateTable):
         with self.storage_manager.connection.open_session() as session:
@@ -104,30 +110,6 @@ class StorageManagerResponder(Responder):
                 raise WiredTigerError(message=wiredtiger_strerror(commit_err), source=self.storage_manager.name)  # type: ignore
         return {"value": {}}
 
-    @staticmethod
-    def encode_value(val_type: str, value: int | float | str | None) -> bytes:
-        if val_type == "null":
-            return b""
-        if val_type == "string":
-            return str(value).encode("utf-8")
-        if val_type == "int":
-            return str(value).encode("ascii")
-        if val_type == "float":
-            return struct.pack(">d", value)  # NOTE: >d is big-endian encoding!
-        raise TypeError(f"Unsupported type: {type(value).__name__}")
-
-    @staticmethod
-    def decode_value(val_type: str, data: bytes) -> int | float | str | None:
-        if val_type == "null":
-            return None
-        if val_type == "string":
-            return data.decode("utf-8")
-        if val_type == "int":
-            return int(data.decode("ascii"))
-        if val_type == "float":
-            return struct.unpack(">d", data)[0]  # Big-endian double
-        raise TypeError(f"Unsupported type: {val_type}")
-
     # BUG: for some reason it seems that resources are not properly released, delete table after insert not possible
     def _handle_insert(self, node: Insert):  # type: ignore
         with self.storage_manager.connection.open_session() as session:
@@ -147,7 +129,7 @@ class StorageManagerResponder(Responder):
                             raise WiredTigerError(message=wiredtiger_strerror(err), source=self.storage_manager.name)  # type: ignore
                         for key, value in document.items():
                             cursor.set_key(document_id_bytes, key)
-                            encoded_value = self.encode_value(val_type=value.type, value=value.value)
+                            encoded_value = encode_value(val_type=value.type, value=value.value)
                             cursor.set_value(value.type, encoded_value)
                             if insert_err := cursor.insert():
                                 if rollback_err := session.rollback_transaction():
@@ -214,7 +196,7 @@ class StorageManagerResponder(Responder):
                             dict_doc["_id"] = current_doc_id_str
 
                         val_type, value_bytes = cursor.get_value()
-                        value = self.decode_value(val_type=val_type, data=value_bytes)
+                        value = decode_value(val_type=val_type, data=value_bytes)
 
                         dict_doc[attribute] = value
 
@@ -320,7 +302,7 @@ class StorageManagerResponder(Responder):
                         if current_doc_id is not None and current_doc_id != key:
                             if dict_satisfies(expr=node.expr, values=dict_doc):
                                 for k, v in node.kv:
-                                    val = self.encode_value(val_type=v.type, value=v.value)
+                                    val = encode_value(val_type=v.type, value=v.value)
                                     to_update.append((current_doc_id, current_doc_id_str, k, v.type, val))
 
                             # start assembling the next document; the new identity is
@@ -337,13 +319,13 @@ class StorageManagerResponder(Responder):
                             dict_doc["_id"] = current_doc_id_str
 
                         val_type, value_bytes = cursor.get_value()
-                        value = self.decode_value(val_type=val_type, data=value_bytes)
+                        value = decode_value(val_type=val_type, data=value_bytes)
 
                         dict_doc[attribute] = value
 
                     if current_doc_id is not None and dict_satisfies(expr=node.expr, values=dict_doc):
                         for k, v in node.kv:
-                            val = self.encode_value(val_type=v.type, value=v.value)
+                            val = encode_value(val_type=v.type, value=v.value)
                             to_update.append((current_doc_id, current_doc_id_str, k, v.type, val))
 
                     if reset_err := cursor.reset():
@@ -401,6 +383,22 @@ class StorageManagerResponder(Responder):
                     message=wiredtiger_strerror(reset_err),  # type: ignore
                     source=self.storage_manager.name,
                 )
+
+    def _handle_projection(self, node: Projection):
+        exec_node: ProjectionExecNode = ExecBuilder().build(algebra_node=node)  # type: ignore
+        # NOTE: not ideal but rather reconstruct types instead of touching the expression eval:)
+        py_tags = {str: "string", int: "int", float: "float", type(None): "null"}
+        documents = {}
+        for doc in exec_node.execute(wt_conn=self.storage_manager.connection):
+            docid = doc.pop("_id")
+            documents[docid] = {
+                attribute: {
+                    "type": py_tags[type(value)],
+                    "value": encode_value(val_type=py_tags[type(value)], value=value),
+                }
+                for attribute, value in doc.items()
+            }
+        return {"value": {}, "documents": documents}
 
 
 class StorageManagerComponent(Component):

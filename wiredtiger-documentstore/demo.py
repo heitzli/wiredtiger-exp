@@ -30,3 +30,9 @@ if __name__ == "__main__":
         print(f" get received : {val3}")
     except Exception as e:
         print(e)
+
+    try:
+        val4 = client._query(query="SELECT name FROM test WHERE age=99;")
+        print(f" get received : {val4}")
+    except Exception as e:
+        print(e)

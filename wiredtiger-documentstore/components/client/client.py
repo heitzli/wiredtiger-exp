@@ -30,4 +30,4 @@ class Client(Component):
 
     def _query(self, query: str) -> str:
         res = self.call_remote(destination="queryprocessor", rpc_name="evaluate", params={"request": {"query": query}})
-        return res["value"]
+        return res

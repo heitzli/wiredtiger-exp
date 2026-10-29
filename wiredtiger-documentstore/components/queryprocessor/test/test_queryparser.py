@@ -68,7 +68,7 @@ def test_serde(query: str, expected_exception: bool, schema):
             reader = avro.io.DatumReader(writers_schema=schema, readers_schema=schema)
             res = reader.read(decoder=avro.io.BinaryDecoder(data))
 
-            deserialized = from_avro_node(res)
+            deserialized = from_avro_node(res)  # type: ignore
     else:
         translated = parse_docql(docql=query)
         node_data = to_avro_node(translated)
@@ -83,6 +83,6 @@ def test_serde(query: str, expected_exception: bool, schema):
         reader = avro.io.DatumReader(writers_schema=schema, readers_schema=schema)
         res = reader.read(decoder=avro.io.BinaryDecoder(data))
 
-        deserialized = from_avro_node(res)
+        deserialized = from_avro_node(res)  # type: ignore
 
         assert translated == deserialized

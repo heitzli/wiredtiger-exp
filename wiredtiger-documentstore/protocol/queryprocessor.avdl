@@ -15,6 +15,7 @@ protocol Queryprocessor{
 
   record EvaluateQueryResponse {
     map<WTValue> value;
+    union {null, map<map<WTValue>>} documents = null;
     union {null, map<string>} custom = null;
   }
 

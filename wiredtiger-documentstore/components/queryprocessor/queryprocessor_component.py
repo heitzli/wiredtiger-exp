@@ -36,7 +36,10 @@ class QueryProcessorResponder(avro.ipc.Responder):
             raise
         except Exception as e:
             raise QueryProcessorError(str(e), source=self.qp.name) from e
-        return {"value": result}
+        reply = {"value": result}
+        if res.get("documents") is not None:
+            reply["documents"] = res["documents"]
+        return reply
 
 
 class QueryProcessor(Component):
