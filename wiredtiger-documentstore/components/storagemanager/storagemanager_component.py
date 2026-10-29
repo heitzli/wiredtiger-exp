@@ -2,7 +2,6 @@ import os
 import struct
 import uuid
 from pathlib import Path
-from threading import current_thread
 
 import wiredtiger
 from avro.ipc import Responder
@@ -221,7 +220,7 @@ class StorageManagerResponder(Responder):
 
                     for doc_id_bytes, doc_id_str in to_delete:
                         try:
-                            self.delete_doc(cursor=cursor, doc_id=doc_id_bytes)
+                            self._delete_doc(cursor=cursor, doc_id=doc_id_bytes)
                             return_map[doc_id_str] = {
                                 "type": "docid",
                                 "value": doc_id_bytes,
@@ -250,7 +249,7 @@ class StorageManagerResponder(Responder):
                 raise e
             return {"value": return_map}
 
-    def delete_doc(self, cursor: wiredtiger.Cursor, doc_id: bytes) -> None:
+    def _delete_doc(self, cursor: wiredtiger.Cursor, doc_id: bytes) -> None:
         try:
             cursor.set_key(doc_id, "")
             ret = cursor.search_near()
