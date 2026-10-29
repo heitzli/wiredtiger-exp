@@ -72,10 +72,33 @@ def dict_satisfies(expr: Expr | None, values: dict[str, AllowedValue]) -> bool:
                 return not evaluate(e.expr)
 
         if isinstance(e, BinOp):
+            # Logical operators are evaluated lazily: a missing operand only
+            # falsifies its own branch, so a matching OR branch is not
+            # discarded when the other branch references an absent attribute.
+            if e.op == "OR":
+                try:
+                    if evaluate(e.left):
+                        return True
+                except KeyError:
+                    pass
+                try:
+                    return bool(evaluate(e.right))
+                except KeyError:
+                    return False
+
+            if e.op == "AND":
+                try:
+                    if not evaluate(e.left):
+                        return False
+                except KeyError:
+                    return False
+                try:
+                    return bool(evaluate(e.right))
+                except KeyError:
+                    return False
+
             a, b = evaluate(e.left), evaluate(e.right)
             ops = {
-                "AND": lambda: a and b,
-                "OR": lambda: a or b,
                 "==": lambda: a == b,
                 # the DocQL grammar emits SQL-style '=' for equality
                 "=": lambda: a == b,

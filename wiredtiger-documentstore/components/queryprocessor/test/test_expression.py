@@ -67,6 +67,60 @@ def test_dict_satisfies_missing_attribute_is_false():
     assert dict_satisfies(binop("=", attr("ghost"), lit(1, "int")), LUC) is False
 
 
+def test_dict_satisfies_or_handles_missing_operands_both_orders():
+    """A missing attribute only falsifies its own OR branch. It used to abort
+    the whole predicate, so `name = 'luc' OR age = 27` evaluated False in both
+    orders on a document that only has `name`."""
+    doc = {"name": "luc"}
+    name_luc = binop("=", attr("name"), lit("luc", "string"))
+    age_27 = binop("=", attr("age"), lit(27, "int"))
+    ghost = binop("=", attr("ghost"), lit(1, "int"))
+
+    assert dict_satisfies(binop("OR", name_luc, age_27), doc) is True  # type: ignore
+    assert dict_satisfies(binop("OR", age_27, name_luc), doc) is True  # type: ignore
+    # missing left branch, matching right branch
+    assert dict_satisfies(binop("OR", ghost, name_luc), doc) is True  # type: ignore
+    # missing right branch after a matching left branch (short-circuit)
+    assert dict_satisfies(binop("OR", name_luc, ghost), doc) is True  # type: ignore
+    # both branches missing
+    assert dict_satisfies(binop("OR", ghost, age_27), {"n": 0}) is False
+
+
+def test_dict_satisfies_and_handles_missing_operands():
+    """AND with a missing operand must resolve to a clean False, in every
+    operand position, instead of raising out of the evaluator."""
+    doc = {"name": "luc"}
+    name_luc = binop("=", attr("name"), lit("luc", "string"))
+    age_27 = binop("=", attr("age"), lit(27, "int"))
+    ghost = binop("=", attr("ghost"), lit(1, "int"))
+
+    assert dict_satisfies(binop("AND", name_luc, age_27), doc) is False  # type: ignore
+    assert dict_satisfies(binop("AND", age_27, name_luc), doc) is False  # type: ignore
+    assert dict_satisfies(binop("AND", ghost, name_luc), doc) is False  # type: ignore
+
+
+def test_dict_satisfies_nested_or_and_with_missing_operands():
+    """Laziness must survive nesting: OR inside AND, and AND inside OR."""
+    doc = {"name": "luc", "height": 1.79}
+    name_luc = binop("=", attr("name"), lit("luc", "string"))
+    age_27 = binop("=", attr("age"), lit(27, "int"))
+    height = binop("=", attr("height"), lit(1.79, "float"))
+    hobby = binop("=", attr("hobby"), lit("chess", "string"))
+
+    assert dict_satisfies(binop("OR", binop("OR", age_27, hobby), name_luc), doc) is True
+    assert dict_satisfies(binop("AND", binop("OR", name_luc, age_27), height), doc) is True
+    assert dict_satisfies(binop("AND", binop("OR", age_27, hobby), height), doc) is False
+
+
+def test_dict_satisfies_or_short_circuit_skips_right_branch():
+    """True laziness, not just missing-operand tolerance: with a matching left
+    branch the right branch is never evaluated. `name < 5` would raise
+    TypeError (str < int), which only passes when skipped."""
+    doc = {"name": "luc"}
+    expr = binop("OR", binop("=", attr("name"), lit("luc", "string")), binop("<", attr("name"), lit(5, "int")))
+    assert dict_satisfies(expr, doc) is True  # type: ignore
+
+
 def test_dict_satisfies_none_expr_matches_everything():
     assert dict_satisfies(None, LUC) is True
     assert dict_satisfies(None, {}) is True
