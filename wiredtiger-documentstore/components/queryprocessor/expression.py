@@ -80,6 +80,7 @@ def dict_satisfies(expr: Expr | None, values: dict[str, AllowedValue]) -> bool:
                 # the DocQL grammar emits SQL-style '=' for equality
                 "=": lambda: a == b,
                 "!=": lambda: a != b,
+                "<>": lambda: a != b,
                 "<": lambda: a < b,
                 ">": lambda: a > b,
                 "<=": lambda: a <= b,
