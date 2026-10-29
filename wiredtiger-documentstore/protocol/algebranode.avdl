@@ -1,0 +1,125 @@
+schema document.queryprocessor.algebra.AlgebraNode;
+
+@namespace("document.queryprocessor.algebra")
+record AlgebraNode {
+  // Order matters for union resolution! especially if similar fields
+  union {CreateTable, DeleteTable, Delete, Insert, Update, TableScan, Projection, Selection} node;
+}
+
+@namespace("document.queryprocessor.algebra")
+record CreateTable {
+  string kind = "CreateTable";
+  string table;
+  union {null, map<string>} custom = null;
+}
+
+// TODO check resolving since same fields as createTable
+@namespace("document.queryprocessor.algebra")
+record DeleteTable {
+  string kind = "DeleteTable";
+  string table;
+  union {null, map<string>} custom = null;
+}
+
+@namespace("document.queryprocessor.algebra")
+record Delete {
+  string kind = "Delete";
+  string table;
+  Expr? expr = null;
+  union {null, map<string>} custom = null;
+}
+
+@namespace("document.queryprocessor.algebra")
+record Insert {
+  string kind = "Insert";
+  string table;
+  array<map<LiteralExpr>> values;
+  union {null, map<string>} custom = null;
+}
+
+@namespace("document.queryprocessor.algebra")
+record Update {
+  string kind = "Update";
+  string table;
+  array<kvpair> kv;
+  Expr? expr = null;
+  union {null, map<string>} custom = null;
+}
+
+@namespace("document.queryprocessor.algebra")
+record kvpair {
+  string key;
+  LiteralExpr value;
+  union {null, map<string>} custom = null;
+}
+
+@namespace("document.queryprocessor.algebra")
+record TableScan {
+  string kind = "TableScan";
+  string table;
+  union {null, map<string>} custom = null;
+}
+
+@namespace("document.queryprocessor.algebra")
+record Projection {
+  string kind = "Projection";
+  array<AttributeRef> attributes;
+  AlgebraNode child;
+  union {null, map<string>} custom = null;
+}
+
+@namespace("document.queryprocessor.algebra")
+record Selection {
+  string kind = "Selection";
+  AlgebraNode child;
+  Expr expr;
+  union {null, map<string>} custom = null;
+}
+
+
+@namespace("document.queryprocessor.algebra")
+record Expr {
+  union {LiteralExpr, BinOp, UnOp, AttributeRef} expr;
+}
+
+@namespace("document.queryprocessor.algebra")
+record AttributeRef {
+  string kind = "AttributeRef";
+  string name;
+  union {null, map<string>} custom = null;
+}
+
+@namespace("document.queryprocessor.algebra")
+record LiteralExpr {
+  string kind = "LiteralExpr";
+  string type;
+  // Order matters. avro-python (1.12.2, AVRO-973) picks the LAST branch whose
+  // validate() passes, and int validates for long/float/double as well, so with
+  // narrow->wide order every numeric datum is written as double: the SM
+  // receives 27.0 while the `type` tag stays "int" and stores b"27.0".
+  // Lossless for |value| <= 2^53 (Python float -> double is always lossless);
+  // only ints beyond 2^53 lose precision on the wire.
+  // Do NOT "fix" this by reordering wide->narrow: that makes ints exact but
+  // pushes floats into the float32 branch (1.79 -> 1.7899999618530273).
+  // If exact int round-trips are ever needed, normalize on decode instead:
+  // from_avro_expr: if type == "int": value = int(value).
+  union {int, long, float, double, string, null} value;
+}
+
+
+@namespace("document.queryprocessor.algebra")
+record BinOp {
+  string kind = "BinOp";
+  string op;
+  Expr left;
+  Expr right;
+  union {null, map<string>} custom = null;
+}
+
+@namespace("document.queryprocessor.algebra")
+record UnOp {
+  string kind = "UnOp";
+  string op;
+  Expr expr;
+  union {null, map<string>} custom = null;
+}

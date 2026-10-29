@@ -1,0 +1,12 @@
+WT_HOME
+.venv
+.mypy**
+**__pycache__
+**.ruff_cache
+**.antlr
+**/generated/**
+!**/generated/.gitkeep
+
+**.avsc
+**.avpr
+WT_DOC_HOME

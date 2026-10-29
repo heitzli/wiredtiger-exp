@@ -1,0 +1,24 @@
+@namespace("document.queryprocessor")
+protocol Queryprocessor{
+
+  import idl "errors.avdl";
+
+  record EvaluateQueryRequest {
+    string query;
+    union {null, map<string>} custom = null;
+  }
+
+  record WTValue {
+    string type;
+    bytes value;
+  }
+
+  record EvaluateQueryResponse {
+    map<WTValue> value;
+    union {null, map<map<WTValue>>} documents = null;
+    union {null, map<string>} custom = null;
+  }
+
+  EvaluateQueryResponse evaluate(EvaluateQueryRequest request) throws document.errors.QueryProcessorError, document.errors.DocQLSyntaxError, document.errors.WiredTigerError;
+
+}
