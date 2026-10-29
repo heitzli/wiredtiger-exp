@@ -2,6 +2,7 @@ import os
 import struct
 import uuid
 from pathlib import Path
+from threading import current_thread
 
 import wiredtiger
 from avro.ipc import Responder
@@ -12,7 +13,7 @@ from components.queryprocessor.docalgebra import Insert
 
 from ..component import Component
 from ..errors import WiredTigerError
-from ..queryprocessor import AbstractAlgebraNode, CreateTable, DeleteTable, from_avro_node
+from ..queryprocessor import AbstractAlgebraNode, CreateTable, Delete, DeleteTable, dict_satisfies, from_avro_node
 
 
 class StorageManagerResponder(Responder):
@@ -45,6 +46,9 @@ class StorageManagerResponder(Responder):
 
             case "Insert":
                 return self._handle_insert(node=node)  # type: ignore
+
+            case "Delete":
+                return self._handle_delete(node=node)  # type: ignore
 
     def _handle_create_table(self, node: CreateTable):
         with self.storage_manager.connection.open_session() as session:
@@ -102,6 +106,18 @@ class StorageManagerResponder(Responder):
             return struct.pack(">d", value)  # NOTE: >d is big-endian encoding!
         raise TypeError(f"Unsupported type: {type(value).__name__}")
 
+    @staticmethod
+    def decode_value(val_type: str, data: bytes) -> int | float | str | None:
+        if val_type == "null":
+            return None
+        if val_type == "string":
+            return data.decode("utf-8")
+        if val_type == "int":
+            return int(data.decode("ascii"))
+        if val_type == "float":
+            return struct.unpack(">d", data)[0]  # Big-endian double
+        raise TypeError(f"Unsupported type: {val_type}")
+
     # BUG: for some reason it seems that resources are not properly released, delete table after insert not possible
     def _handle_insert(self, node: Insert):  # type: ignore
         with self.storage_manager.connection.open_session() as session:
@@ -138,6 +154,11 @@ class StorageManagerResponder(Responder):
                                 message=wiredtiger_strerror(commit_err),  # type: ignore
                                 source=self.storage_manager.name,
                             )
+                        if reset_err := cursor.reset():
+                            raise WiredTigerError(
+                                message=wiredtiger_strerror(reset_err),  # type: ignore
+                                source=self.storage_manager.name,
+                            )
                         return_map[document_id_str] = {
                             "type": "docid",
                             "value": document_id_bytes,
@@ -145,6 +166,116 @@ class StorageManagerResponder(Responder):
             except Exception as e:
                 raise e
             return {"value": return_map}
+
+    def _handle_delete(self, node: Delete):
+        # NOTE: in order to keep things simple we always cycle through all records, even if expr is _id = unique id
+        # since could be part of a more complex expression
+        return_map = {}
+        with self.storage_manager.connection.open_session() as session:
+            try:
+                # TODO check if this is the right place to start a tx?
+                with session.open_cursor(f"table:{node.table}") as cursor:
+                    if start_tx_err := session.begin_transaction():
+                        raise WiredTigerError(
+                            message=wiredtiger_strerror(start_tx_err),  # type: ignore
+                            source=self.storage_manager.name,
+                        )
+
+                    current_doc_id: bytes | None = None
+                    current_doc_id_str = ""
+                    dict_doc = {}
+                    to_delete: list[tuple[bytes, str]] = []
+                    while cursor.next() == 0:
+                        key, attribute = cursor.get_key()
+
+                        if current_doc_id is not None and current_doc_id != key:
+                            # document boundary: the previous document is complete,
+                            # so evaluate it before starting the next one
+                            # NOTE: if expression is none delete all entries of table
+                            if dict_satisfies(expr=node.expr, values=dict_doc):
+                                to_delete.append((current_doc_id, current_doc_id_str))
+
+                            dict_doc = {}
+                            current_doc_id_str = ""
+
+                        current_doc_id = key
+                        if "_id" not in dict_doc:
+                            current_doc_id_str = str(uuid.UUID(bytes=key))
+                            dict_doc["_id"] = current_doc_id_str
+
+                        val_type, value_bytes = cursor.get_value()
+                        value = self.decode_value(val_type=val_type, data=value_bytes)
+
+                        dict_doc[attribute] = value
+
+                    # a document is only evaluated when the next one starts, so the
+                    # last document in scan order has to be evaluated here as well
+                    if current_doc_id is not None and dict_satisfies(expr=node.expr, values=dict_doc):
+                        to_delete.append((current_doc_id, current_doc_id_str))
+
+                    if reset_err := cursor.reset():
+                        raise WiredTigerError(
+                            message=wiredtiger_strerror(reset_err),  # type: ignore
+                            source=self.storage_manager.name,
+                        )
+
+                    for doc_id_bytes, doc_id_str in to_delete:
+                        try:
+                            self.delete_doc(cursor=cursor, doc_id=doc_id_bytes)
+                            return_map[doc_id_str] = {
+                                "type": "docid",
+                                "value": doc_id_bytes,
+                            }
+                        except Exception as e:
+                            if rollback_err := session.rollback_transaction():
+                                raise WiredTigerError(
+                                    message=wiredtiger_strerror(rollback_err),  # type: ignore
+                                    source=self.storage_manager.name,
+                                )
+                            raise e
+
+                    if commit_err := session.commit_transaction():
+                        raise WiredTigerError(
+                            message=wiredtiger_strerror(commit_err),  # type: ignore
+                            source=self.storage_manager.name,
+                        )
+                    if reset_err := cursor.reset():
+                        raise WiredTigerError(
+                            message=wiredtiger_strerror(reset_err),  # type: ignore
+                            source=self.storage_manager.name,
+                        )
+
+            except Exception as e:
+                # TODO test what happens if table does not exist
+                raise e
+            return {"value": return_map}
+
+    def delete_doc(self, cursor: wiredtiger.Cursor, doc_id: bytes) -> None:
+        try:
+            cursor.set_key(doc_id, "")
+            ret = cursor.search_near()
+            # (docid, "") sorts before every (docid, attribute) row of the
+            # document, so search_near rarely matches exactly (ret == 0); only
+            # ret < 0 means the cursor is on the last row of the previous
+            # document and we have to step onto our own first row.
+            if ret < 0 and cursor.next() != 0:
+                return
+
+            # search_near may position before or after the requested key.
+            key_doc_id, _ = cursor.get_key()
+            if key_doc_id != doc_id:
+                return
+
+            # remove all rows belonging to this document
+            while True:
+                key_doc_id, _ = cursor.get_key()
+                if key_doc_id != doc_id:
+                    break
+                cursor.remove()
+                if cursor.next() != 0:
+                    break
+        finally:
+            cursor.reset()
 
 
 class StorageManagerComponent(Component):

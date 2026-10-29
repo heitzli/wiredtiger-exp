@@ -52,3 +52,44 @@ class UnOp(Expr):
     kind: Literal["UnOp"] = "UnOp"
     op: str
     expr: Expr
+
+
+def dict_satisfies(expr: Expr | None, values: dict[str, AllowedValue]) -> bool:
+    if expr is None:
+        return True
+
+    def evaluate(e: Expr):
+        if isinstance(e, AttributeRef):
+            if e.name not in values.keys():
+                raise KeyError(e.name)
+            return values[e.name]
+
+        if isinstance(e, LiteralExpr):
+            return e.value
+
+        if isinstance(e, UnOp):
+            if e.op == "NOT":
+                return not evaluate(e.expr)
+
+        if isinstance(e, BinOp):
+            a, b = evaluate(e.left), evaluate(e.right)
+            ops = {
+                "AND": lambda: a and b,
+                "OR": lambda: a or b,
+                "==": lambda: a == b,
+                # the DocQL grammar emits SQL-style '=' for equality
+                "=": lambda: a == b,
+                "!=": lambda: a != b,
+                "<": lambda: a < b,
+                ">": lambda: a > b,
+                "<=": lambda: a <= b,
+                ">=": lambda: a >= b,
+            }
+            return ops[e.op]()
+
+        raise ValueError(f"Unsupported expression: {e}")
+
+    try:
+        return bool(evaluate(expr))
+    except KeyError:
+        return False
