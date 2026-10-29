@@ -15,8 +15,6 @@ from avro.protocol import Protocol
 from components.component import Component
 from components.conftest import BROKER_SOCKET
 from components.errors import DocQLSyntaxError, QueryProcessorError
-from components.queryprocessor.avro_utils import to_avro_node
-from components.queryprocessor.queryprocessor_component import QueryProcessor
 
 
 class StubStorageManager(Component):

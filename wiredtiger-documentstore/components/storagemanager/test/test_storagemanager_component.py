@@ -13,7 +13,7 @@ from components.errors import WiredTigerError
 from components.queryprocessor.avro_utils import to_avro_node
 from components.queryprocessor.docalgebra import CreateTable, Delete, DeleteTable, Insert, Update
 from components.queryprocessor.expression import AttributeRef, BinOp, LiteralExpr
-from components.storagemanager.storagemanager_component import StorageManagerResponder
+from components.storagemanager.value_utils import encode_value
 
 
 def execute_plan(sm, node):
@@ -37,7 +37,7 @@ def write_row(sm, table: str, docid: bytes, attribute: str, tag: str, value) -> 
     with sm.connection.open_session() as session:
         with session.open_cursor(f"table:{table}") as cursor:
             cursor.set_key(docid, attribute)
-            cursor.set_value(tag, StorageManagerResponder.encode_value(tag, value))
+            cursor.set_value(tag, encode_value(tag, value))
             assert cursor.insert() == 0
 
 
@@ -143,7 +143,9 @@ def test_delete_table_after_insert_removes_table(storage_manager):
     """Regression: dropping a freshly-inserted table used to fail with EBUSY
     (WiredTiger requires a checkpoint before dropping a table with data)."""
     execute_plan(storage_manager, CreateTable(table="tbl_delete"))
-    execute_plan(storage_manager, Insert(table="tbl_delete", values=[{"name": LiteralExpr(value="luc", type="string")}]))
+    execute_plan(
+        storage_manager, Insert(table="tbl_delete", values=[{"name": LiteralExpr(value="luc", type="string")}])
+    )
     assert registered_tables(storage_manager) == {"tbl_delete"}
 
     res = execute_plan(storage_manager, DeleteTable(table="tbl_delete"))
@@ -182,13 +184,13 @@ def test_responder_invokes_execute_and_creates_table(storage_manager):
 
 
 def test_value_encodings():
-    assert StorageManagerResponder.encode_value("null", None) == b""
-    assert StorageManagerResponder.encode_value("string", "luc") == b"luc"
-    assert StorageManagerResponder.encode_value("int", 27) == b"27"
-    assert StorageManagerResponder.encode_value("float", 1.79) == struct.pack(">d", 1.79)
+    assert encode_value("null", None) == b""
+    assert encode_value("string", "luc") == b"luc"
+    assert encode_value("int", 27) == b"27"
+    assert encode_value("float", 1.79) == struct.pack(">d", 1.79)
 
     with pytest.raises(TypeError):
-        StorageManagerResponder.encode_value("bool", True)
+        encode_value("bool", True)
 
 
 # --- delete with WHERE (regressions for the demo.py "Delete FROM ... WHERE" bug chain) ---

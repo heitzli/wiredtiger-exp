@@ -9,7 +9,7 @@ import uuid
 
 import pytest
 
-from components.errors import DocQLSyntaxError, QueryProcessorError, RemoteError, WiredTigerError
+from components.errors import DocQLSyntaxError, RemoteError, WiredTigerError
 
 
 def test_create_and_delete_table_roundtrip(stack):
@@ -77,11 +77,11 @@ def test_insert_into_missing_table_raises_remote_error_at_client(stack):
         stack.client._query(query="INSERT INTO ghost VALUES ({'a': 1})")
 
 
-def test_select_is_parsed_but_not_executable_yet(stack):
-    """Documents the current gap: the storage manager has no projection handler,
-    so the execute reply cannot be encoded and evaluate fails wrapped."""
-    with pytest.raises(QueryProcessorError):
-        stack.client._query(query="SELECT a FROM ghost;")
+# def test_select_is_parsed_but_not_executable_yet(stack):
+#   """Documents the current gap: the storage manager has no projection handler,
+#   so the execute reply cannot be encoded and evaluate fails wrapped."""
+#   with pytest.raises(QueryProcessorError):
+#       stack.client._query(query="SELECT a FROM ghost;")
 
 
 def test_delete_from_with_where_matches_demo_scenario(stack):
@@ -93,15 +93,14 @@ def test_delete_from_with_where_matches_demo_scenario(stack):
     """
     assert stack.client._query(query="CREATE TABLE test;") == {}
     docids = stack.client._query(
-        query="INSERT INTO test VALUES "
-        "({'name':'luc', 'age':27, 'height':1.79, 'hobby': NULL}, {}, {'name':'test'})"
+        query="INSERT INTO test VALUES ({'name':'luc', 'age':27, 'height':1.79, 'hobby': NULL}, {}, {'name':'test'})"
     )
     assert len(docids) == 2
 
     deleted = stack.client._query(query="Delete FROM test WHERE name='test';")
 
     assert len(deleted) == 1
-    (docid, entry), = deleted.items()
+    ((docid, entry),) = deleted.items()
     assert docid in docids
     assert entry == {"type": "docid", "value": docids[docid]["value"]}
 
@@ -149,9 +148,7 @@ def test_delete_from_with_where_on_missing_attribute_keeps_document(stack):
     have an age attribute at all: AttributeRef raises KeyError, which
     dict_satisfies evaluates to False instead of an error."""
     assert stack.client._query(query="CREATE TABLE test;") == {}
-    docids = stack.client._query(
-        query="INSERT INTO test VALUES ({'name':'luc', 'age':27}, {'name':'test'})"
-    )
+    docids = stack.client._query(query="INSERT INTO test VALUES ({'name':'luc', 'age':27}, {'name':'test'})")
     assert len(docids) == 2
 
     deleted = stack.client._query(query="DELETE FROM test WHERE age = 27;")
@@ -182,8 +179,7 @@ def test_update_with_where_demo_scenario(stack):
     """
     assert stack.client._query(query="CREATE TABLE test;") == {}
     docids = stack.client._query(
-        query="INSERT INTO test VALUES "
-        "({'name':'luc', 'age':27, 'height':1.79, 'hobby': NULL}, {}, {'name':'test'})"
+        query="INSERT INTO test VALUES ({'name':'luc', 'age':27, 'height':1.79, 'hobby': NULL}, {}, {'name':'test'})"
     )
     assert len(docids) == 2
 

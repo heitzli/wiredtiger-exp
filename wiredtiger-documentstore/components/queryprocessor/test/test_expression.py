@@ -74,7 +74,7 @@ def test_dict_satisfies_none_expr_matches_everything():
 
 def test_dict_satisfies_without_id_can_use_underscore_id():
     doc = {"_id": "06f19bbb-7e73-4b95-9cf9-7a5f79b5a95c", "name": "luc"}
-    assert dict_satisfies(binop("=", attr("_id"), lit(doc["_id"], "string")), doc) is True
+    assert dict_satisfies(binop("=", attr("_id"), lit(doc["_id"], "string")), doc) is True  # type: ignore
 
 
 def test_dict_satisfies_int_attribute_after_avro_normalize():
