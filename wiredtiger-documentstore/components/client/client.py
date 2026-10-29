@@ -70,7 +70,12 @@ class Client(Component):
 
     def insert(self, table: str, values: list[dict]) -> dict:
         rows = ", ".join(
-            "{" + ", ".join(f"'{attribute}': {self._format_literal(value)}" for attribute, value in row.items()) + "}"
+            "{"
+            + ", ".join(
+                f"{self._format_literal(attribute)}: {self._format_literal(value)}"
+                for attribute, value in row.items()
+            )
+            + "}"
             for row in values
         )
         reply = self._query(f"INSERT INTO {table} VALUES ({rows});")
