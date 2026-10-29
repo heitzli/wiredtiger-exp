@@ -26,7 +26,7 @@ if __name__ == "__main__":
         print(e)
 
     try:
-        val3 = client._query(query="Delete FROM test WHERE name='test';")
+        val3 = client._query(query="UPDATE test SET age=99, hobby='archery' WHERE name='test';")
         print(f" get received : {val3}")
     except Exception as e:
         print(e)

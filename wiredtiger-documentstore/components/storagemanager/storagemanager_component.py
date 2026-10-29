@@ -12,7 +12,15 @@ from components.queryprocessor.docalgebra import Insert
 
 from ..component import Component
 from ..errors import WiredTigerError
-from ..queryprocessor import AbstractAlgebraNode, CreateTable, Delete, DeleteTable, dict_satisfies, from_avro_node
+from ..queryprocessor import (
+    AbstractAlgebraNode,
+    CreateTable,
+    Delete,
+    DeleteTable,
+    Update,
+    dict_satisfies,
+    from_avro_node,
+)
 
 
 class StorageManagerResponder(Responder):
@@ -48,6 +56,9 @@ class StorageManagerResponder(Responder):
 
             case "Delete":
                 return self._handle_delete(node=node)  # type: ignore
+
+            case "Update":
+                return self._handle_update(node=node)  # type: ignore
 
     def _handle_create_table(self, node: CreateTable):
         with self.storage_manager.connection.open_session() as session:
@@ -275,6 +286,121 @@ class StorageManagerResponder(Responder):
                     break
         finally:
             cursor.reset()
+
+    def _handle_update(self, node: Update):
+        return_map = {}
+        # IDEA: similarly to delete first retrieve the candidates and then perform the updates
+        with self.storage_manager.connection.open_session() as session:
+            try:
+                with session.open_cursor(f"table:{node.table}") as cursor:
+                    if start_tx_err := session.begin_transaction():
+                        raise WiredTigerError(
+                            message=wiredtiger_strerror(start_tx_err),  # type: ignore
+                            source=self.storage_manager.name,
+                        )
+
+                    # NOTE: cursor.next() on an ALREADY EXHAUSTED cursor (after it
+                    # returned WT_NOTFOUND once) RESTARTS the scan and returns 0 again in
+                    # this WT build. A scan loop must therefore never call next() after it
+                    # hit the end.
+                    current_doc_id: bytes | None = None
+                    current_doc_id_str = ""
+                    dict_doc = {}
+                    to_update: list[
+                        tuple[bytes, str, str, str, bytes]
+                    ] = []  # byte_id, str_id, attr_name, type ,byte_value
+
+                    while cursor.next() == 0:
+                        key, attribute = cursor.get_key()
+                        # document boundary: the doc id changed, so the previous document
+                        # is complete and can be evaluated BEFORE the boundary state is
+                        # overwritten for the new document (row 1 of the new doc must not
+                        # claim the identity before the old doc was flushed)
+                        # NOTE: if expression is none every document matches
+                        if current_doc_id is not None and current_doc_id != key:
+                            if dict_satisfies(expr=node.expr, values=dict_doc):
+                                for k, v in node.kv:
+                                    val = self.encode_value(val_type=v.type, value=v.value)
+                                    to_update.append((current_doc_id, current_doc_id_str, k, v.type, val))
+
+                            # start assembling the next document; the new identity is
+                            # claimed below in the same iteration
+                            dict_doc = {}
+                            current_doc_id_str = ""
+
+                        # update the boundary state to the doc of the current row
+                        current_doc_id = key
+                        # first row seen of a document: claim its identity and expose _id
+                        # (dict_doc was just cleared at the boundary, or this is row 1)
+                        if "_id" not in dict_doc:
+                            current_doc_id_str = str(uuid.UUID(bytes=key))
+                            dict_doc["_id"] = current_doc_id_str
+
+                        val_type, value_bytes = cursor.get_value()
+                        value = self.decode_value(val_type=val_type, data=value_bytes)
+
+                        dict_doc[attribute] = value
+
+                    if current_doc_id is not None and dict_satisfies(expr=node.expr, values=dict_doc):
+                        for k, v in node.kv:
+                            val = self.encode_value(val_type=v.type, value=v.value)
+                            to_update.append((current_doc_id, current_doc_id_str, k, v.type, val))
+
+                    if reset_err := cursor.reset():
+                        raise WiredTigerError(
+                            message=wiredtiger_strerror(reset_err),  # type: ignore
+                            source=self.storage_manager.name,
+                        )
+
+                    for doc_id_bytes, doc_id_str, attr_name, val_type, byte_val in to_update:
+                        try:
+                            self._update_doc(
+                                cursor=cursor,
+                                doc_id=doc_id_bytes,
+                                attr_name=attr_name,
+                                value_type=val_type,
+                                value=byte_val,
+                            )
+                            return_map[f"{doc_id_str}-{attr_name}"] = {"type": val_type, "value": byte_val}
+                        except Exception as e:
+                            if rollback_err := session.rollback_transaction():
+                                raise WiredTigerError(
+                                    message=wiredtiger_strerror(rollback_err),  # type: ignore
+                                    source=self.storage_manager.name,
+                                )
+                            raise e
+
+                    # CHANGED/FIX: commit was MISSING entirely (the delete handler has it).
+                    # All _update_doc inserts ran inside begin_transaction(); returning
+                    # without commit made the session close roll the transaction back,
+                    # so the reply reported success while the changes never persisted.
+                    if commit_err := session.commit_transaction():
+                        raise WiredTigerError(
+                            message=wiredtiger_strerror(commit_err),  # type: ignore
+                            source=self.storage_manager.name,
+                        )
+            except Exception as e:
+                # TODO test what happens if table does not exist
+                raise e
+
+            return {"value": return_map}
+
+    def _update_doc(self, cursor: wiredtiger.Cursor, doc_id: bytes, attr_name: str, value_type: str, value: bytes):
+        try:
+            cursor.set_key(doc_id, attr_name)
+            cursor.set_value(value_type, value)
+            if insert_err := cursor.insert():
+                raise WiredTigerError(
+                    message=wiredtiger_strerror(insert_err),  # type: ignore
+                    source=self.storage_manager.name,
+                )
+
+        finally:
+            if reset_err := cursor.reset():
+                raise WiredTigerError(
+                    message=wiredtiger_strerror(reset_err),  # type: ignore
+                    source=self.storage_manager.name,
+                )
 
 
 class StorageManagerComponent(Component):
