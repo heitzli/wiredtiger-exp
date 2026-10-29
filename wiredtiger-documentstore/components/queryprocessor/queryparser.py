@@ -167,6 +167,8 @@ class DocQLSyntaxExtractor(DocQLVisitor):
 
 def parse_docql(docql: str) -> AbstractAlgebraNode:
     lexer = DocQLLexer(input=InputStream(data=docql))
+    lexer.removeErrorListeners()
+    lexer.addErrorListener(listener=RaisingErrorListener())
     tokens = CommonTokenStream(lexer=lexer)
     parser = DocQLParser(input=tokens)
     parser.removeErrorListeners()
