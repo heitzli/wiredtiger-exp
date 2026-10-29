@@ -329,6 +329,10 @@ class Component(ABC):
             channel.closed = True
             if channel.framed_socket is not None:
                 try:
+                    channel.framed_socket.sock.shutdown(socket.SHUT_RDWR)
+                except OSError:
+                    pass
+                try:
                     channel.framed_socket.close()
                 except OSError:
                     pass
