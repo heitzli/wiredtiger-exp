@@ -81,3 +81,89 @@ def test_select_is_parsed_but_not_executable_yet(stack):
     so the execute reply cannot be encoded and evaluate fails wrapped."""
     with pytest.raises(QueryProcessorError):
         stack.client._query(query="SELECT a FROM ghost;")
+
+
+def test_delete_from_with_where_matches_demo_scenario(stack):
+    """Regression for demo.py query 3: DELETE FROM test WHERE name='test'.
+
+    Used to fail through a chain of bugs: '=' missing from the evaluator's ops
+    table, missing final flush / wrong identity-claim ordering in the delete
+    scan, delete_doc near-miss early return, and an unwired reply shape.
+    """
+    assert stack.client._query(query="CREATE TABLE test;") == {}
+    docids = stack.client._query(
+        query="INSERT INTO test VALUES "
+        "({'name':'luc', 'age':27, 'height':1.79, 'hobby': NULL}, {}, {'name':'test'})"
+    )
+    assert len(docids) == 2
+
+    deleted = stack.client._query(query="Delete FROM test WHERE name='test';")
+
+    assert len(deleted) == 1
+    (docid, entry), = deleted.items()
+    assert docid in docids
+    assert entry == {"type": "docid", "value": docids[docid]["value"]}
+
+    # only the 'luc' document survives, with all four attributes intact
+    rows: dict[str, tuple[str, bytes]] = {}
+    with stack.storagemanager.connection.open_session() as session:
+        with session.open_cursor("table:test") as cursor:
+            while cursor.next() == 0:
+                _, attribute = tuple(cursor.get_key())
+                rows[attribute] = tuple(cursor.get_value())
+    assert rows == {
+        "age": ("int", b"27"),
+        "height": ("float", struct.pack(">d", 1.79)),
+        "hobby": ("null", b""),
+        "name": ("string", b"luc"),
+    }
+
+
+def test_delete_from_without_where_removes_all_documents(stack):
+    """DELETE FROM without a WHERE clause parses to Delete(expr=None):
+    dict_satisfies(None, ...) evaluates True for every document, so the whole
+    table is emptied and every docid is reported as deleted."""
+    assert stack.client._query(query="CREATE TABLE test;") == {}
+    docids = stack.client._query(
+        query="INSERT INTO test VALUES "
+        "({'name':'luc', 'age':27, 'height':1.79, 'hobby': NULL}, {}, {'name':'test'}, {'name':'anna'})"
+    )
+    assert len(docids) == 3
+
+    deleted = stack.client._query(query="DELETE FROM test;")
+
+    assert sorted(deleted) == sorted(docids)
+    for docid, entry in deleted.items():
+        assert docid in docids
+        assert entry == {"type": "docid", "value": docids[docid]["value"]}
+
+    # the table must be empty now
+    with stack.storagemanager.connection.open_session() as session:
+        with session.open_cursor("table:test") as cursor:
+            assert cursor.next() != 0
+
+
+def test_delete_from_with_where_on_missing_attribute_keeps_document(stack):
+    """DELETE FROM test WHERE age = 27 must not match documents that do not
+    have an age attribute at all: AttributeRef raises KeyError, which
+    dict_satisfies evaluates to False instead of an error."""
+    assert stack.client._query(query="CREATE TABLE test;") == {}
+    docids = stack.client._query(
+        query="INSERT INTO test VALUES ({'name':'luc', 'age':27}, {'name':'test'})"
+    )
+    assert len(docids) == 2
+
+    deleted = stack.client._query(query="DELETE FROM test WHERE age = 27;")
+
+    # only luc's document (age = 27) matches; 'test' has no age and survives
+    assert len(deleted) == 1
+    (deleted_docid,) = deleted.keys()
+    assert deleted_docid in docids
+
+    with stack.storagemanager.connection.open_session() as session:
+        with session.open_cursor("table:test") as cursor:
+            rows: dict[str, tuple[str, bytes]] = {}
+            while cursor.next() == 0:
+                _, attribute = tuple(cursor.get_key())
+                rows[attribute] = tuple(cursor.get_value())
+    assert rows == {"name": ("string", b"test")}
