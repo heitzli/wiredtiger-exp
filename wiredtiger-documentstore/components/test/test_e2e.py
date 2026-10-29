@@ -5,6 +5,7 @@ through the real wire protocol (avro binary envelopes, broker routing, error uni
 """
 
 import struct
+import uuid
 
 import pytest
 
@@ -167,3 +168,59 @@ def test_delete_from_with_where_on_missing_attribute_keeps_document(stack):
                 _, attribute = tuple(cursor.get_key())
                 rows[attribute] = tuple(cursor.get_value())
     assert rows == {"name": ("string", b"test")}
+
+
+def test_update_with_where_demo_scenario(stack):
+    """Regression for demo.py query 3: UPDATE test SET age=99, hobby='archery'
+    WHERE name='test'.
+
+    Used to hang forever: the update handler had an accidental nested double
+    scan loop and WiredTiger's next()-after-EOF restart quirk (calling next()
+    on an exhausted cursor restarts the scan returning 0) kept it spinning.
+    After the restructure it even reported success while nothing was persisted,
+    because the transaction was never committed.
+    """
+    assert stack.client._query(query="CREATE TABLE test;") == {}
+    docids = stack.client._query(
+        query="INSERT INTO test VALUES "
+        "({'name':'luc', 'age':27, 'height':1.79, 'hobby': NULL}, {}, {'name':'test'})"
+    )
+    assert len(docids) == 2
+
+    updated = stack.client._query(query="UPDATE test SET age=99, hobby='archery' WHERE name='test';")
+
+    # both upserted attributes are reported as "<docid>-<attribute>" keys of one document
+    assert len(updated) == 2
+    prefixes = {key.rsplit("-", 1)[0] for key in updated}
+    attribute_of = {key.rsplit("-", 1)[1]: entry for key, entry in updated.items()}
+    inserted_ids = {str(uuid.UUID(bytes=entry["value"])) for entry in docids.values()}
+
+    assert len(prefixes) == 1
+    assert prefixes <= inserted_ids
+    assert set(attribute_of) == {"age", "hobby"}
+    assert attribute_of["age"] == {"type": "int", "value": b"99"}
+    assert attribute_of["hobby"] == {"type": "string", "value": b"archery"}
+
+    # the update must be committed: the 'test' document is extended by age and
+    # hobby while luc's document is untouched
+    docs: dict[bytes, dict[str, tuple[str, bytes]]] = {}
+    with stack.storagemanager.connection.open_session() as session:
+        with session.open_cursor("table:test") as cursor:
+            while cursor.next() == 0:
+                docid, attribute = tuple(cursor.get_key())
+                docs.setdefault(docid, {})[attribute] = tuple(cursor.get_value())
+
+    assert len(docs) == 2
+    test_doc = next(doc for doc in docs.values() if doc["name"] == ("string", b"test"))
+    luc_doc = next(doc for doc in docs.values() if doc["name"] == ("string", b"luc"))
+    assert test_doc == {
+        "name": ("string", b"test"),
+        "age": ("int", b"99"),
+        "hobby": ("string", b"archery"),
+    }
+    assert luc_doc == {
+        "name": ("string", b"luc"),
+        "age": ("int", b"27"),
+        "height": ("float", struct.pack(">d", 1.79)),
+        "hobby": ("null", b""),
+    }

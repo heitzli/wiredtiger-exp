@@ -11,7 +11,7 @@ import pytest
 
 from components.errors import WiredTigerError
 from components.queryprocessor.avro_utils import to_avro_node
-from components.queryprocessor.docalgebra import CreateTable, Delete, DeleteTable, Insert
+from components.queryprocessor.docalgebra import CreateTable, Delete, DeleteTable, Insert, Update
 from components.queryprocessor.expression import AttributeRef, BinOp, LiteralExpr
 from components.storagemanager.storagemanager_component import StorageManagerResponder
 
@@ -282,3 +282,157 @@ def test_delete_with_where_on_missing_attribute_keeps_documents_without_it(stora
     remaining = stored_documents(storage_manager, "tbl_mixed")
     assert set(remaining) == {DOC_MIDDLE}
     assert remaining[DOC_MIDDLE] == {"name": ("string", b"test")}
+
+
+# --- update with WHERE (regressions for the demo.py "UPDATE ... WHERE" hang / lost writes) ---
+
+
+def test_update_with_where_updates_matching_document_only(storage_manager):
+    """The single-attribute document BETWEEN two multi-attribute documents must
+    be evaluated via its own dict_doc (identity claim after the boundary flush)
+    and get the kv pair upserted; the other documents stay untouched.
+
+    Reading through a fresh session (as stored_documents does) only sees the
+    update because the handler commits its transaction: the missing commit used
+    to silently roll everything back while the reply still reported success.
+    """
+    execute_plan(storage_manager, CreateTable(table="tbl_upd_where"))
+    insert_document(storage_manager, "tbl_upd_where", DOC_FIRST, {"name": "luc", "age": 30})
+    insert_document(storage_manager, "tbl_upd_where", DOC_MIDDLE, {"name": "test"})
+    insert_document(storage_manager, "tbl_upd_where", DOC_LAST, {"name": "anna", "age": 42})
+
+    res = execute_plan(
+        storage_manager,
+        Update(
+            table="tbl_upd_where",
+            kv=[("age", LiteralExpr(value=99, type="int"))],
+            expr=where_equals("name", "test"),
+        ),
+    )
+
+    middle_id = str(uuid.UUID(bytes=DOC_MIDDLE))
+    assert res["value"] == {f"{middle_id}-age": {"type": "int", "value": b"99"}}
+
+    stored = stored_documents(storage_manager, "tbl_upd_where")
+    assert stored[DOC_MIDDLE] == {"name": ("string", b"test"), "age": ("int", b"99")}
+    assert stored[DOC_FIRST] == {"name": ("string", b"luc"), "age": ("int", b"30")}
+    assert stored[DOC_LAST] == {"name": ("string", b"anna"), "age": ("int", b"42")}
+
+
+def test_update_matches_last_document_in_scan_order(storage_manager):
+    """Without the final flush after the scan loop the LAST document in scan
+    order is never evaluated (no boundary follows it) and can never match.
+    (Before the restructure this test used to hang instead of fail: a nested
+    double loop plus WiredTiger's next()-after-EOF restart quirk.)"""
+    execute_plan(storage_manager, CreateTable(table="tbl_upd_last"))
+    insert_document(storage_manager, "tbl_upd_last", DOC_FIRST, {"name": "luc"})
+    insert_document(storage_manager, "tbl_upd_last", DOC_LAST, {"name": "test"})
+
+    res = execute_plan(
+        storage_manager,
+        Update(
+            table="tbl_upd_last",
+            kv=[("name", LiteralExpr(value="molly", type="string"))],
+            expr=where_equals("name", "test"),
+        ),
+    )
+
+    last_id = str(uuid.UUID(bytes=DOC_LAST))
+    assert res["value"] == {f"{last_id}-name": {"type": "string", "value": b"molly"}}
+
+    stored = stored_documents(storage_manager, "tbl_upd_last")
+    assert stored[DOC_LAST] == {"name": ("string", b"molly")}
+    assert stored[DOC_FIRST] == {"name": ("string", b"luc")}
+
+
+def test_update_matches_first_document_in_scan_order(storage_manager):
+    """The old outer loop consumed the first row of the scan — DOC_FIRST's
+    alphabetically-first attribute row ('age') — before assembling the first
+    dict_doc, so a WHERE on that attribute could never match DOC_FIRST."""
+    execute_plan(storage_manager, CreateTable(table="tbl_upd_first"))
+    insert_document(storage_manager, "tbl_upd_first", DOC_FIRST, {"name": "test", "age": 30})
+    insert_document(storage_manager, "tbl_upd_first", DOC_LAST, {"name": "anna", "age": 42})
+
+    res = execute_plan(
+        storage_manager,
+        Update(
+            table="tbl_upd_first",
+            kv=[("name", LiteralExpr(value="molly", type="string"))],
+            expr=where_equals("age", 30, "int"),
+        ),
+    )
+
+    first_id = str(uuid.UUID(bytes=DOC_FIRST))
+    assert res["value"] == {f"{first_id}-name": {"type": "string", "value": b"molly"}}
+
+    stored = stored_documents(storage_manager, "tbl_upd_first")
+    assert stored[DOC_FIRST] == {"name": ("string", b"molly"), "age": ("int", b"30")}
+    assert stored[DOC_LAST] == {"name": ("string", b"anna"), "age": ("int", b"42")}
+
+
+def test_update_without_where_updates_all_documents(storage_manager):
+    """Update(expr=None) must behave like delete: dict_satisfies(None, ...)
+    matches every document."""
+    execute_plan(storage_manager, CreateTable(table="tbl_upd_all"))
+    insert_document(storage_manager, "tbl_upd_all", DOC_FIRST, {"name": "luc", "age": 27})
+    insert_document(storage_manager, "tbl_upd_all", DOC_MIDDLE, {"name": "test"})
+    insert_document(storage_manager, "tbl_upd_all", DOC_LAST, {"name": "anna", "age": 42})
+
+    res = execute_plan(
+        storage_manager,
+        Update(table="tbl_upd_all", kv=[("hobby", LiteralExpr(value="chess", type="string"))]),
+    )
+
+    assert res["value"] == {
+        f"{str(uuid.UUID(bytes=DOC_FIRST))}-hobby": {"type": "string", "value": b"chess"},
+        f"{str(uuid.UUID(bytes=DOC_MIDDLE))}-hobby": {"type": "string", "value": b"chess"},
+        f"{str(uuid.UUID(bytes=DOC_LAST))}-hobby": {"type": "string", "value": b"chess"},
+    }
+
+    stored = stored_documents(storage_manager, "tbl_upd_all")
+    assert stored[DOC_FIRST] == {"name": ("string", b"luc"), "age": ("int", b"27"), "hobby": ("string", b"chess")}
+    assert stored[DOC_MIDDLE] == {"name": ("string", b"test"), "hobby": ("string", b"chess")}
+    assert stored[DOC_LAST] == {"name": ("string", b"anna"), "age": ("int", b"42"), "hobby": ("string", b"chess")}
+
+
+def test_update_with_where_on_missing_attribute_matches_nothing(storage_manager):
+    """Documents lacking the WHERE attribute must not match (and nothing may be
+    upserted): AttributeRef raises KeyError, which dict_satisfies evaluates to
+    False instead of an error."""
+    execute_plan(storage_manager, CreateTable(table="tbl_upd_none"))
+    insert_document(storage_manager, "tbl_upd_none", DOC_FIRST, {"name": "luc"})
+
+    res = execute_plan(
+        storage_manager,
+        Update(
+            table="tbl_upd_none",
+            kv=[("age", LiteralExpr(value=99, type="int"))],
+            expr=where_equals("city", "basel"),
+        ),
+    )
+
+    assert res == {"value": {}}
+    assert stored_documents(storage_manager, "tbl_upd_none") == {DOC_FIRST: {"name": ("string", b"luc")}}
+
+
+def test_update_upserts_row_with_new_type_tag(storage_manager):
+    """_update_doc upserts the whole (docid, attribute) row: overwriting an
+    attribute with a different type replaces the complete value, tag included."""
+    execute_plan(storage_manager, CreateTable(table="tbl_upd_type"))
+    insert_document(storage_manager, "tbl_upd_type", DOC_FIRST, {"name": "luc", "age": 30})
+
+    res = execute_plan(
+        storage_manager,
+        Update(
+            table="tbl_upd_type",
+            kv=[("age", LiteralExpr(value="ninety-nine", type="string"))],
+            expr=where_equals("name", "luc"),
+        ),
+    )
+
+    first_id = str(uuid.UUID(bytes=DOC_FIRST))
+    assert res["value"] == {f"{first_id}-age": {"type": "string", "value": b"ninety-nine"}}
+    assert stored_documents(storage_manager, "tbl_upd_type")[DOC_FIRST] == {
+        "name": ("string", b"luc"),
+        "age": ("string", b"ninety-nine"),
+    }
