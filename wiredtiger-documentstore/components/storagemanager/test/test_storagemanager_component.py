@@ -11,7 +11,17 @@ import pytest
 
 from components.errors import WiredTigerError
 from components.queryprocessor.avro_utils import to_avro_node
-from components.queryprocessor.docalgebra import CreateTable, Delete, DeleteTable, Insert, Update
+from components.queryprocessor.docalgebra import (
+    Attribute,
+    CreateTable,
+    Delete,
+    DeleteTable,
+    Insert,
+    Projection,
+    Selection,
+    TableScan,
+    Update,
+)
 from components.queryprocessor.expression import AttributeRef, BinOp, LiteralExpr
 from components.storagemanager.value_utils import encode_value
 
@@ -438,3 +448,120 @@ def test_update_upserts_row_with_new_type_tag(storage_manager):
         "name": ("string", b"luc"),
         "age": ("string", b"ninety-nine"),
     }
+
+
+# --- select (Projection handler; no SELECT * — there is always an explicit projection) ---
+
+
+def test_select_without_where_returns_all_documents(storage_manager):
+    """SELECT without a WHERE clause parses to Projection(child=TableScan) —
+    no Selection node — so every stored document is streamed back, each with
+    exactly the projected attribute (there is no SELECT *)."""
+    execute_plan(storage_manager, CreateTable(table="tbl_sel_all"))
+    insert_document(storage_manager, "tbl_sel_all", DOC_FIRST, {"name": "luc"})
+    insert_document(storage_manager, "tbl_sel_all", DOC_MIDDLE, {"name": "test"})
+    insert_document(storage_manager, "tbl_sel_all", DOC_LAST, {"name": "anna"})
+
+    res = execute_plan(
+        storage_manager,
+        Projection(
+            attributes=(Attribute(name="name"),),
+            child=TableScan(table="tbl_sel_all"),
+        ),
+    )
+
+    first_id, middle_id, last_id = (str(uuid.UUID(bytes=d)) for d in (DOC_FIRST, DOC_MIDDLE, DOC_LAST))
+    assert res["value"] == {}
+    assert set(res["documents"]) == {first_id, middle_id, last_id}
+    assert res["documents"][first_id] == {"name": {"type": "string", "value": b"luc"}}
+    assert res["documents"][middle_id] == {"name": {"type": "string", "value": b"test"}}
+    assert res["documents"][last_id] == {"name": {"type": "string", "value": b"anna"}}
+
+
+def test_select_with_where_returns_only_matching_document(storage_manager):
+    """SELECT ... WHERE parses to Projection(child=Selection(child=TableScan)):
+    only documents satisfying the selection are streamed through."""
+    execute_plan(storage_manager, CreateTable(table="tbl_sel_where"))
+    insert_document(storage_manager, "tbl_sel_where", DOC_FIRST, {"name": "luc", "age": 30})
+    insert_document(storage_manager, "tbl_sel_where", DOC_MIDDLE, {"name": "test"})
+    insert_document(storage_manager, "tbl_sel_where", DOC_LAST, {"name": "anna", "age": 42})
+
+    res = execute_plan(
+        storage_manager,
+        Projection(
+            attributes=(Attribute(name="name"),),
+            child=Selection(
+                expr=where_equals("age", 30, "int"),
+                child=TableScan(table="tbl_sel_where"),
+            ),
+        ),
+    )
+
+    first_id = str(uuid.UUID(bytes=DOC_FIRST))
+    assert set(res["documents"]) == {first_id}
+    assert res["documents"][first_id] == {"name": {"type": "string", "value": b"luc"}}
+
+
+def test_select_preserves_type_tags_for_all_attribute_types(storage_manager):
+    """The {"type", "value"} pairs are the client's reconvert contract: the
+    tag must survive reconstruction for every supported type, including null
+    and float."""
+    execute_plan(storage_manager, CreateTable(table="tbl_sel_types"))
+    insert_document(
+        storage_manager, "tbl_sel_types", DOC_FIRST, {"name": "luc", "age": 27, "height": 1.79, "hobby": None}
+    )
+
+    res = execute_plan(
+        storage_manager,
+        Projection(
+            attributes=(
+                Attribute(name="name"),
+                Attribute(name="age"),
+                Attribute(name="height"),
+                Attribute(name="hobby"),
+            ),
+            child=TableScan(table="tbl_sel_types"),
+        ),
+    )
+
+    assert res["documents"][str(uuid.UUID(bytes=DOC_FIRST))] == {
+        "name": {"type": "string", "value": b"luc"},
+        "age": {"type": "int", "value": b"27"},
+        "height": {"type": "float", "value": struct.pack(">d", 1.79)},
+        "hobby": {"type": "null", "value": b""},
+    }
+
+
+def test_select_projection_limits_attributes_per_document(storage_manager):
+    """Only projected attributes may appear per document; a document missing a
+    projected attribute contributes an empty attribute map for its docid."""
+    execute_plan(storage_manager, CreateTable(table="tbl_sel_proj"))
+    insert_document(storage_manager, "tbl_sel_proj", DOC_FIRST, {"name": "luc", "height": 1.79})
+    insert_document(storage_manager, "tbl_sel_proj", DOC_MIDDLE, {"age": 41})
+
+    res = execute_plan(
+        storage_manager,
+        Projection(
+            attributes=(Attribute(name="name"),),
+            child=TableScan(table="tbl_sel_proj"),
+        ),
+    )
+
+    assert res["documents"] == {
+        str(uuid.UUID(bytes=DOC_FIRST)): {"name": {"type": "string", "value": b"luc"}},
+        str(uuid.UUID(bytes=DOC_MIDDLE)): {},
+    }
+
+
+def test_select_on_empty_table_returns_no_documents(storage_manager):
+    execute_plan(storage_manager, CreateTable(table="tbl_sel_empty"))
+
+    res = execute_plan(
+        storage_manager,
+        Projection(
+            attributes=(Attribute(name="name"),),
+            child=TableScan(table="tbl_sel_empty"),
+        ),
+    )
+
+    assert res == {"value": {}, "documents": {}}

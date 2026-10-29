@@ -77,11 +77,77 @@ def test_insert_into_missing_table_raises_remote_error_at_client(stack):
         stack.client._query(query="INSERT INTO ghost VALUES ({'a': 1})")
 
 
-# def test_select_is_parsed_but_not_executable_yet(stack):
-#   """Documents the current gap: the storage manager has no projection handler,
-#   so the execute reply cannot be encoded and evaluate fails wrapped."""
-#   with pytest.raises(QueryProcessorError):
-#       stack.client._query(query="SELECT a FROM ghost;")
+def test_select_with_where_returns_only_matching_document(stack):
+    """Full stack: client -> broker -> queryprocessor (parse to
+    Projection(child=Selection(child=TableScan))) -> storagemanager.
+
+    The client returns the documents map: docid -> {attribute: {"type", "value"}}.
+    """
+    assert stack.client._query(query="CREATE TABLE test;") == {}
+    stack.client._query(
+        query="INSERT INTO test VALUES ({'name':'luc', 'age':27}, {'name':'test'})"
+    )
+
+    documents = stack.client._query(query="SELECT name FROM test WHERE name = 'luc';")
+
+    # only luc's document matches, and only the projected attribute travels
+    assert len(documents) == 1
+    (attrs,) = documents.values()
+    assert attrs == {"name": {"type": "string", "value": b"luc"}}
+
+
+def test_select_without_where_returns_all_documents_with_projected_attributes(stack):
+    """SELECT without a WHERE clause (no Selection node) returns every stored
+    document, and — since there is no SELECT * — only the explicitly projected
+    attributes per document."""
+    assert stack.client._query(query="CREATE TABLE test;") == {}
+    stack.client._query(
+        query="INSERT INTO test VALUES "
+        "({'name':'luc', 'age':27, 'height':1.79, 'hobby': NULL}, {'name':'test'})"
+    )
+
+    documents = stack.client._query(query="SELECT name, age FROM test;")
+
+    assert len(documents) == 2
+    for attrs in documents.values():
+        # only projected attributes may appear; extra stored ones never do;
+        # missing ones are not backfilled (see the 'test' document below)
+        assert set(attrs) <= {"name", "age"}
+
+    # the 'test' document has no age; it is not backfilled (no SELECT *)
+    test_doc = next(doc for doc in documents.values() if doc["name"]["value"] == b"test")
+    assert "age" not in test_doc
+    luc_doc = next(doc for doc in documents.values() if doc["name"]["value"] == b"luc")
+    assert luc_doc["age"] == {"type": "int", "value": b"27"}
+
+
+def test_select_returns_type_faithful_values(stack):
+    """Every projected attribute travels as {"type", "value"} with the tag the
+    client needs to reconvert: int -> ascii digits, float -> big-endian double,
+    string -> utf-8, null -> empty bytes."""
+    assert stack.client._query(query="CREATE TABLE test;") == {}
+    stack.client._query(
+        query="INSERT INTO test VALUES "
+        "({'name':'luc', 'age':27, 'height':1.79, 'hobby': NULL}, {'name':'test'})"
+    )
+
+    documents = stack.client._query(query="SELECT name, age, height, hobby FROM test WHERE name = 'luc';")
+
+    assert len(documents) == 1
+    (attrs,) = documents.values()
+    assert attrs == {
+        "name": {"type": "string", "value": b"luc"},
+        "age": {"type": "int", "value": b"27"},
+        "height": {"type": "float", "value": struct.pack(">d", 1.79)},
+        "hobby": {"type": "null", "value": b""},
+    }
+
+
+def test_select_on_missing_table_raises_typed_error_at_client(stack):
+    """Was pinned as 'parsed but not executable'; now the plan reaches the
+    storage manager, whose missing-table failure travels typed to the client."""
+    with pytest.raises(RemoteError, match="No such file or directory"):
+        stack.client._query(query="SELECT a FROM ghost;")
 
 
 def test_delete_from_with_where_matches_demo_scenario(stack):

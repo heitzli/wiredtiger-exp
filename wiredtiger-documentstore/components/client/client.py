@@ -30,4 +30,7 @@ class Client(Component):
 
     def _query(self, query: str) -> str:
         res = self.call_remote(destination="queryprocessor", rpc_name="evaluate", params={"request": {"query": query}})
-        return res
+        documents = res.get("documents")
+        if documents is not None:
+            return documents
+        return res["value"]
