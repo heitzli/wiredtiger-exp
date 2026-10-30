@@ -17,6 +17,7 @@ from avro.protocol import Protocol
 
 from .errors import error_from_datum
 from .framedsocket import FramedSocket
+from .logger import get_logger
 from .message_codec import (
     CODEC,
     Message,
@@ -65,6 +66,7 @@ class Component(ABC):
         self, name: str, broker_protocol_path: Path, protocol_path: Path, broker_socket: str, component_socket: str
     ) -> None:
         self.name = name
+        self.log = get_logger(name)
         self.socket_path: str = component_socket
         self.sock = self.start_unix_server(path=component_socket)
         self.broker_protocol = self._load_protocol(protocol_path=broker_protocol_path)
@@ -106,6 +108,7 @@ class Component(ABC):
 
     def register(self) -> Any:
         """Register the component to the broker. Maybe add more metadata in the future depending on the role of the broker."""
+        self.log.debug("registering with broker")
         return self.requestor.request(
             "register",
             {
@@ -143,12 +146,13 @@ class Component(ABC):
             if protcol is None:
                 raise ValueError(f"Unknown remote component {remote_name!r}")
             self.component_protocols[remote_name] = avro.protocol.parse(protcol)
+            self.log.debug("protocol fetched from %s", remote_name)
             destination_protocol = self.component_protocols[remote_name]
 
-        avro_message = destination_protocol.messages.get(rpc_name)
+        avro_message = destination_protocol.messages.get(rpc_name)  # type: ignore
         if avro_message is None:
             raise ValueError(
-                f"Unknown remote RPC {rpc_name!r} on {remote_name!r}; known: {sorted(destination_protocol.messages)}"
+                f"Unknown remote RPC {rpc_name!r} on {remote_name!r}; known: {sorted(destination_protocol.messages)}"  # type: ignore
             )
         return avro_message
 
@@ -204,7 +208,10 @@ class Component(ABC):
     def call_remote(self, destination: str, rpc_name: str, params: dict) -> Any:
         """Synchronous RPC through the broker returns the decoded response datum."""
         message = self.create_message(datum=params, request_name=rpc_name, destination=destination)
-        print(f"[{self.name}] -> {destination} rpc={rpc_name} id={message.correlation_id}", flush=True)
+        self.log.info(
+            "send",
+            extra={"peer": destination, "rpc": rpc_name, "correlation_id": message.correlation_id, "content": params},
+        )
         if destination == self.name:
             # Bypass the broker: enqueue from other threads, dispatch inline
             # from the worker itself (enqueue-and-wait there would self-deadlock).
@@ -248,7 +255,7 @@ class Component(ABC):
 
     def _handle_connection(self, sock: socket.socket, address: str) -> None:
         """Connection handler, reads framed socket"""
-        print(f"[{self.name}] connection from {address}", flush=True)
+        self.log.info("connect from %r", address)
         framed_socket = FramedSocket(sock, remote_name=f"unix:{address}")
         reader = avro.ipc.FramedReader(framed_socket)
         channel = _ReplyChannel(writer=avro.ipc.FramedWriter(framed_socket), framed_socket=framed_socket)
@@ -258,7 +265,7 @@ class Component(ABC):
                 try:
                     raw = reader.read_framed_message()
                 except Exception as exc:
-                    print(f"[{self.name}] connection closed: {exc}", flush=True)
+                    self.log.debug("connection closed: %s", exc)
                     break
                 if not raw:
                     break
@@ -267,7 +274,7 @@ class Component(ABC):
             with channel.lock:
                 channel.closed = True
             framed_socket.close()
-            print(f"[{self.name}] disconnected: {address}", flush=True)
+            self.log.debug("disconnect")
 
     def _serve(self) -> None:
         """Worker loop: one worker thread for the moment that dispatches requests."""
@@ -282,16 +289,16 @@ class Component(ABC):
                 except Exception as exc:
                     # _dispatch encodes handler errors itself; reaching here means
                     # the reply could not be built at all, so fail the channel.
-                    print(f"[{self.name}] request failed: {exc}", flush=True)
+                    self.log.exception("request failed: %s", exc)
                     self._fail(item.channel, exc)
                     continue
                 try:
                     self._answer(item.channel, reply_raw)
                 except Exception as exc:
-                    print(f"[{self.name}] reply failed: {exc}", flush=True)
+                    self.log.exception("reply failed: %s", exc)
                     self._fail(item.channel, exc)
             except Exception as exc:  # last resort: never let the worker thread die
-                print(f"[{self.name}] worker error: {exc}", flush=True)
+                self.log.exception("worker error: %s", exc)
             finally:
                 self._inbox.task_done()
 
@@ -308,7 +315,7 @@ class Component(ABC):
             try:
                 channel.writer.write_framed_message(message=reply_raw)
             except (ConnectionError, BrokenPipeError, OSError) as exc:
-                print(f"[{self.name}] reply dropped, client gone: {exc}", flush=True)
+                self.log.warning("reply dropped, client gone: %s", exc)
                 channel.closed = True
 
     def _fail(self, channel: _ReplyChannel, exc: Exception | None = None) -> None:
@@ -347,12 +354,21 @@ class Component(ABC):
             request_datum = decode_avro_datum(local_message.request, body)
         else:
             request_datum = body
-        print(f"[{self.name}] <- {message.source} rpc={method} id={message.correlation_id}", flush=True)
+        self.log.info(
+            "receive",
+            extra={
+                "peer": message.source,
+                "rpc": method,
+                "correlation_id": message.correlation_id,
+                "content": request_datum,
+            },
+        )
         try:
             response_datum = self.responder.invoke(local_message, request_datum)
         except Exception as exc:
             # Handler errors are encoded into the RPC's declared errors union and
             # travel as data inside the reply, so the broker stays opaque.
+            self.log.exception("handler error: %s", exc)
             payload = encode_error_payload(method=method, exc=exc, errors_schema=local_message.errors, source=self.name)
         else:
             payload = encode_response_payload(method, response_datum, local_message.response)
