@@ -59,7 +59,7 @@ def broker(project_root):
     try:
         yield broker
     finally:
-        broker.sock.close()
+        broker.close()
 
 
 @pytest.fixture
