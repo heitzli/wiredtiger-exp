@@ -90,10 +90,14 @@ def test_select_with_where_returns_only_matching_document(stack):
 
     documents = stack.client._query(query="SELECT name FROM test WHERE name = 'luc';")
 
-    # only luc's document matches, and only the projected attribute travels
+    # only luc's document matches; the projected attribute travels plus the
+    # always-present synthesized _id
     assert len(documents) == 1
-    (attrs,) = documents.values()
-    assert attrs == {"name": {"type": "string", "value": b"luc"}}
+    ((docid, attrs),) = documents.items()
+    assert attrs == {
+        "name": {"type": "string", "value": b"luc"},
+        "_id": {"type": "string", "value": docid.encode()},
+    }
 
 
 def test_select_without_where_returns_all_documents_with_projected_attributes(stack):
@@ -109,10 +113,11 @@ def test_select_without_where_returns_all_documents_with_projected_attributes(st
     documents = stack.client._query(query="SELECT name, age FROM test;")
 
     assert len(documents) == 2
-    for attrs in documents.values():
-        # only projected attributes may appear; extra stored ones never do;
-        # missing ones are not backfilled (see the 'test' document below)
-        assert set(attrs) <= {"name", "age"}
+    for docid, attrs in documents.items():
+        # _id always travels; besides it only the projected attributes may
+        # appear and missing ones are not backfilled (no SELECT *)
+        assert set(attrs) <= {"name", "age", "_id"}
+        assert attrs["_id"] == {"type": "string", "value": docid.encode()}
 
     # the 'test' document has no age; it is not backfilled (no SELECT *)
     test_doc = next(doc for doc in documents.values() if doc["name"]["value"] == b"test")
@@ -134,12 +139,13 @@ def test_select_returns_type_faithful_values(stack):
     documents = stack.client._query(query="SELECT name, age, height, hobby FROM test WHERE name = 'luc';")
 
     assert len(documents) == 1
-    (attrs,) = documents.values()
+    ((docid, attrs),) = documents.items()
     assert attrs == {
         "name": {"type": "string", "value": b"luc"},
         "age": {"type": "int", "value": b"27"},
         "height": {"type": "float", "value": struct.pack(">d", 1.79)},
         "hobby": {"type": "null", "value": b""},
+        "_id": {"type": "string", "value": docid.encode()},
     }
 
 

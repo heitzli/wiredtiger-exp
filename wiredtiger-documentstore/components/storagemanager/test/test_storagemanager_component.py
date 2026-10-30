@@ -456,7 +456,8 @@ def test_update_upserts_row_with_new_type_tag(storage_manager):
 def test_select_without_where_returns_all_documents(storage_manager):
     """SELECT without a WHERE clause parses to Projection(child=TableScan) —
     no Selection node — so every stored document is streamed back, each with
-    exactly the projected attribute (there is no SELECT *)."""
+    exactly the projected attribute plus the always-present _id (there is no
+    SELECT *)."""
     execute_plan(storage_manager, CreateTable(table="tbl_sel_all"))
     insert_document(storage_manager, "tbl_sel_all", DOC_FIRST, {"name": "luc"})
     insert_document(storage_manager, "tbl_sel_all", DOC_MIDDLE, {"name": "test"})
@@ -473,9 +474,18 @@ def test_select_without_where_returns_all_documents(storage_manager):
     first_id, middle_id, last_id = (str(uuid.UUID(bytes=d)) for d in (DOC_FIRST, DOC_MIDDLE, DOC_LAST))
     assert res["value"] == {}
     assert set(res["documents"]) == {first_id, middle_id, last_id}
-    assert res["documents"][first_id] == {"name": {"type": "string", "value": b"luc"}}
-    assert res["documents"][middle_id] == {"name": {"type": "string", "value": b"test"}}
-    assert res["documents"][last_id] == {"name": {"type": "string", "value": b"anna"}}
+    assert res["documents"][first_id] == {
+        "name": {"type": "string", "value": b"luc"},
+        "_id": {"type": "string", "value": first_id.encode()},
+    }
+    assert res["documents"][middle_id] == {
+        "name": {"type": "string", "value": b"test"},
+        "_id": {"type": "string", "value": middle_id.encode()},
+    }
+    assert res["documents"][last_id] == {
+        "name": {"type": "string", "value": b"anna"},
+        "_id": {"type": "string", "value": last_id.encode()},
+    }
 
 
 def test_select_with_where_returns_only_matching_document(storage_manager):
@@ -499,7 +509,10 @@ def test_select_with_where_returns_only_matching_document(storage_manager):
 
     first_id = str(uuid.UUID(bytes=DOC_FIRST))
     assert set(res["documents"]) == {first_id}
-    assert res["documents"][first_id] == {"name": {"type": "string", "value": b"luc"}}
+    assert res["documents"][first_id] == {
+        "name": {"type": "string", "value": b"luc"},
+        "_id": {"type": "string", "value": first_id.encode()},
+    }
 
 
 def test_select_preserves_type_tags_for_all_attribute_types(storage_manager):
@@ -524,17 +537,20 @@ def test_select_preserves_type_tags_for_all_attribute_types(storage_manager):
         ),
     )
 
-    assert res["documents"][str(uuid.UUID(bytes=DOC_FIRST))] == {
+    first_id = str(uuid.UUID(bytes=DOC_FIRST))
+    assert res["documents"][first_id] == {
         "name": {"type": "string", "value": b"luc"},
         "age": {"type": "int", "value": b"27"},
         "height": {"type": "float", "value": struct.pack(">d", 1.79)},
         "hobby": {"type": "null", "value": b""},
+        "_id": {"type": "string", "value": first_id.encode()},
     }
 
 
 def test_select_projection_limits_attributes_per_document(storage_manager):
-    """Only projected attributes may appear per document; a document missing a
-    projected attribute contributes an empty attribute map for its docid."""
+    """Besides the projected attributes every document carries the synthesized
+    _id; a document that has none of the projected attributes therefore
+    contributes only its _id (never other stored attributes)."""
     execute_plan(storage_manager, CreateTable(table="tbl_sel_proj"))
     insert_document(storage_manager, "tbl_sel_proj", DOC_FIRST, {"name": "luc", "height": 1.79})
     insert_document(storage_manager, "tbl_sel_proj", DOC_MIDDLE, {"age": 41})
@@ -547,9 +563,15 @@ def test_select_projection_limits_attributes_per_document(storage_manager):
         ),
     )
 
+    first_id, middle_id = str(uuid.UUID(bytes=DOC_FIRST)), str(uuid.UUID(bytes=DOC_MIDDLE))
     assert res["documents"] == {
-        str(uuid.UUID(bytes=DOC_FIRST)): {"name": {"type": "string", "value": b"luc"}},
-        str(uuid.UUID(bytes=DOC_MIDDLE)): {},
+        first_id: {
+            "name": {"type": "string", "value": b"luc"},
+            "_id": {"type": "string", "value": first_id.encode()},
+        },
+        middle_id: {
+            "_id": {"type": "string", "value": middle_id.encode()},
+        },
     }
 
 

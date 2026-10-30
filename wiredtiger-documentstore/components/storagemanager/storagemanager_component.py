@@ -116,17 +116,17 @@ class StorageManagerResponder(Responder):
             try:
                 with session.open_cursor(f"table:{node.table}") as cursor:
                     return_map = {}
+
+                    # CHANGE: entire insert is treated as atomic
+                    if err := session.begin_transaction():
+                        raise WiredTigerError(message=wiredtiger_strerror(err), source=self.storage_manager.name)  # type: ignore
                     for document in node.values:
                         if not document:  # skip empty documents
                             continue
                         document_id = uuid.uuid4()
                         document_id_str = str(document_id)
                         document_id_bytes = document_id.bytes
-                        # NOTE: a document is treated as an atomic unit and is either inserted completly or not at all.
-                        # A list of documents might be only partially inserted if a crash occurs.
-                        # TODO: check if this is a reasonable assumption
-                        if err := session.begin_transaction():
-                            raise WiredTigerError(message=wiredtiger_strerror(err), source=self.storage_manager.name)  # type: ignore
+
                         for key, value in document.items():
                             cursor.set_key(document_id_bytes, key)
                             encoded_value = encode_value(val_type=value.type, value=value.value)
@@ -141,11 +141,6 @@ class StorageManagerResponder(Responder):
                                     message=wiredtiger_strerror(insert_err),  # type: ignore
                                     source=self.storage_manager.name,
                                 )
-                        if commit_err := session.commit_transaction():  # commit the document
-                            raise WiredTigerError(
-                                message=wiredtiger_strerror(commit_err),  # type: ignore
-                                source=self.storage_manager.name,
-                            )
                         if reset_err := cursor.reset():
                             raise WiredTigerError(
                                 message=wiredtiger_strerror(reset_err),  # type: ignore
@@ -155,6 +150,12 @@ class StorageManagerResponder(Responder):
                             "type": "docid",
                             "value": document_id_bytes,
                         }  # TODO figure out a better return value than this...
+
+                    if commit_err := session.commit_transaction():  # commit the whole insert atomically
+                        raise WiredTigerError(
+                            message=wiredtiger_strerror(commit_err),  # type: ignore
+                            source=self.storage_manager.name,
+                        )
             except Exception as e:
                 raise e
             return {"value": return_map}
@@ -390,7 +391,7 @@ class StorageManagerResponder(Responder):
         py_tags = {str: "string", int: "int", float: "float", type(None): "null"}
         documents = {}
         for doc in exec_node.execute(wt_conn=self.storage_manager.connection):
-            docid = doc.pop("_id")
+            docid = doc.get("_id")
             documents[docid] = {
                 attribute: {
                     "type": py_tags[type(value)],
