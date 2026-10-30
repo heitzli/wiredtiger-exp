@@ -31,10 +31,6 @@ from .message_codec import (
     message_to_dict,
 )
 
-# TODO: how to handle different protocol sources?
-# TODO: connection are closed after succ. rpc call, check how to create long lived connections maybe
-# TODO look at work stealing queues in python -> python queue is mpmc
-
 
 @dataclass
 class _ReplyChannel:

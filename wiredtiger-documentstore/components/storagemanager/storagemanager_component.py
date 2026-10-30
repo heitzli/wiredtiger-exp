@@ -110,7 +110,6 @@ class StorageManagerResponder(Responder):
                 raise WiredTigerError(message=wiredtiger_strerror(commit_err), source=self.storage_manager.name)  # type: ignore
         return {"value": {}}
 
-    # BUG: for some reason it seems that resources are not properly released, delete table after insert not possible
     def _handle_insert(self, node: Insert):  # type: ignore
         with self.storage_manager.connection.open_session() as session:
             try:
@@ -166,7 +165,6 @@ class StorageManagerResponder(Responder):
         return_map = {}
         with self.storage_manager.connection.open_session() as session:
             try:
-                # TODO check if this is the right place to start a tx?
                 with session.open_cursor(f"table:{node.table}") as cursor:
                     if start_tx_err := session.begin_transaction():
                         raise WiredTigerError(
@@ -239,7 +237,6 @@ class StorageManagerResponder(Responder):
                         )
 
             except Exception as e:
-                # TODO test what happens if table does not exist
                 raise e
             return {"value": return_map}
 
@@ -363,7 +360,6 @@ class StorageManagerResponder(Responder):
                             source=self.storage_manager.name,
                         )
             except Exception as e:
-                # TODO test what happens if table does not exist
                 raise e
 
             return {"value": return_map}

@@ -54,13 +54,11 @@ class BrokerResponder(avro.ipc.Responder):
         name = inner["name"]
         socket_path = inner["socket"]
         component_protocol: str = inner["protocol"]
-        # TODO: check if overriding logic is wanted
 
         with self._broker.brocker_lock:
             self._broker.components[name] = socket_path
             print(f"[broker] registering {name!r} at {socket_path!r}", flush=True)
             self._broker.known_protocols[name] = avro.protocol.parse(component_protocol)
-            # TODO add the functions, add to protocol
 
         return {"result": 0}
 

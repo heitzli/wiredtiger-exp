@@ -22,7 +22,6 @@ class TableScanExecNode(ExecNode):
     def execute(self, wt_conn: wiredtiger.Connection):  # type: ignore
         with wt_conn.open_session() as session:
             with session.open_cursor(f"table:{self.table}") as cursor:
-                # TODO check transaction scope
                 if start_tx_err := session.begin_transaction():
                     raise WiredTigerError(
                         message=wiredtiger_strerror(start_tx_err),  # type: ignore
