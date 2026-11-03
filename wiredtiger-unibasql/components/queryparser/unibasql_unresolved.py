@@ -6,7 +6,7 @@ from typing import Literal, TypeAlias
 from pydantic import Field
 from pydantic.dataclasses import dataclass
 
-from components.queryparser.expression import Expr, LiteralExpr
+from .expression import Expr
 
 AllowedValue: TypeAlias = str | int | float | bool | None
 Star: TypeAlias = Literal["*"]
@@ -70,6 +70,8 @@ class UnresolvedQuery(AbstractStatement, ABC):
 
 
 class UnresolvedLiteralExpr(Expr):
+    """Represents a Literal Expression that has not been resolved, mirrors LiteralExpr"""
+
     type: str
     value: AllowedValue
 
@@ -119,9 +121,9 @@ class UnresolvedDML(AbstractStatement):
     op: DMLOp
     table: UnresolvedTable
     columns: list[UnresolvedColumn] | None = None
-    values: list[list[LiteralExpr]] | None = None
+    values: list[list[UnresolvedLiteralExpr]] | None = None
     expr: Expr | None = None
-    setlist: list[tuple[UnresolvedColumn, LiteralExpr]] | None = None
+    setlist: list[tuple[UnresolvedColumn, UnresolvedLiteralExpr]] | None = None
 
 
 # Unresolved DDL
@@ -143,7 +145,7 @@ class UnresolvedIndexDDL(AbstractStatement):
     op: DDLOp
     idx_name: str
     table: UnresolvedTable
-    columns: list[UnresolvedColumn]
+    columns: list[UnresolvedColumn] | None = None
 
 
 @dataclass(frozen=True)
