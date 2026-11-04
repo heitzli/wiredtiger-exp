@@ -1,12 +1,34 @@
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
 from .expression import Expr, pretty
+from .unibasql_unresolved import AllowedValue, DataType
 
-# NOTE: in this prototype no validation is performed on queries
+
+class ResolvedValue(BaseModel):
+    kind: Literal["ResolvedValue"] = "ResolvedValue"
+    type: DataType
+    value: AllowedValue
+
+
+class ResolvedTable(BaseModel):
+    kind: Literal["ResolvedTable"] = "ResolvedTable"
+    name: str
+    table_schema: tuple[ResolvedColumn, ...]
+    alias: str | None = None
+
+    @property
+    def qualifier(self) -> str:
+        return self.alias or self.name
+
+
+class ResolvedColumn(BaseModel):
+    kind: Literal["ResolvedColumn"] = "ResolvedColumn"
+    name: str
+    type: DataType
+    qualifier: str | None = None
 
 
 class AbstractAlgebraNode(BaseModel, ABC):
@@ -27,25 +49,30 @@ class AbstractAlgebraNode(BaseModel, ABC):
 
 class TableScan(AbstractAlgebraNode):
     kind: Literal["TableScan"] = "TableScan"
-    table: str
+    table: ResolvedTable
 
     def children(self) -> list[AbstractAlgebraNode]:
         return []
 
     def label(self) -> str:
-        return f"TableScan({self.table})"
+        return f"TableScan({self.table.name} AS {self.table.alias})"
+
+
+class VirtualTableScan(AbstractAlgebraNode):
+    kind: Literal["VirtualTableScan"] = "VirtualTableScan"
+    values: list[tuple[ResolvedValue]]
 
 
 class Projection(AbstractAlgebraNode):
     kind: Literal["Projection"] = "Projection"
-    attributes: tuple[ResolvedColumn, ...]
+    attributes: tuple[ResolvedColumn, ...]  # NOTE: star is expanded to all columns present in table
     child: AbstractAlgebraNode
 
     def children(self) -> list[AbstractAlgebraNode]:
         return [self.child]
 
     def label(self) -> str:
-        projection_str = ", ".join(f"{col.name}" for col in self.attributes)
+        projection_str = ", ".join(f"{col.qualifier}.{col.name}" for col in self.attributes)
         return f"π[{projection_str}]"
 
 
@@ -70,7 +97,7 @@ class Cross(AbstractAlgebraNode):
         return [self.left, self.right]
 
     def label(self) -> str:
-        return "X"
+        return "CROSS"
 
 
 class Union(AbstractAlgebraNode):
@@ -82,7 +109,7 @@ class Union(AbstractAlgebraNode):
         return [self.left, self.right]
 
     def label(self) -> str:
-        return "U"
+        return "UNION"
 
 
 class Difference(AbstractAlgebraNode):
@@ -94,4 +121,4 @@ class Difference(AbstractAlgebraNode):
         return [self.left, self.right]
 
     def label(self) -> str:
-        return "-"
+        return "EXCEPT"

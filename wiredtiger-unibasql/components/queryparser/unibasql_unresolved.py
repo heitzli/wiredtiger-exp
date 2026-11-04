@@ -66,9 +66,9 @@ class UnresolvedQuery(AbstractStatement, ABC):
 
 
 # Unresolved references
-#
 
 
+# NOTE: maybe better to distinguish unresolved expressions and unresolved values
 class UnresolvedLiteralExpr(Expr):
     """Represents a Literal Expression that has not been resolved, mirrors LiteralExpr"""
 

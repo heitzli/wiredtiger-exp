@@ -1,17 +1,11 @@
-from components import parse_unibasql
+from components import QueryAnalyzer, parse_unibasql
 
 if __name__ == "__main__":
     t1 = parse_unibasql(
         """
-        SELECT * FROM test t, testest tt WHERE tt.col1 = 'val1' OR t.col1 <> TRUE
-
-        UNION
-
-        SELECT * FROM test t, testest tt WHERE tt.col1 = 'val1' OR t.col1 <> TRUE
-
-        EXCEPT
-
-        SELECT * FROM test t, testest tt WHERE tt.col1 = 'val1' OR t.col1 <> TRUE;
+        SELECT e.id, d.id FROM employees e, departments d WHERE e.id = d.id OR e.id > 5 AND NOT e.id <> e.id;
         """
     )
     print(t1)
+    alg = QueryAnalyzer().analyze_query(t1[0])
+    alg.print_tree()
