@@ -148,7 +148,7 @@ class Difference(AbstractAlgebraNode):
 # Seperated from more general ExtendedProjection
 # NOTE this is very relational specific and might not generalize well over different datamodels
 class TupleUpdate(AbstractAlgebraNode):
-    kind: Literal["Extend"] = "Extend"
+    kind: Literal["TupleUpdate"] = "TupleUpdate"
 
     assignments: tuple[tuple[ResolvedColumn, Expr], ...]
     child: AbstractAlgebraNode

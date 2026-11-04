@@ -86,7 +86,7 @@ class QueryAnalyzer:
             resolved_table = self._resolve_table(tables=[unresolved_query.table])
             if len(resolved_table) != 1:
                 raise ValueError(
-                    f"DDL statement can only be performed on exactly one table. Provided {len(resolved_table)} tables {resolved_table}"
+                    f"DML statement can only be performed on exactly one table. Provided {len(resolved_table)} tables {resolved_table}"
                 )
 
             match unresolved_query.op:
@@ -171,10 +171,14 @@ class QueryAnalyzer:
         if isinstance(unresolved_query, UnresolvedIndexDDL):
             match unresolved_query.op:
                 case DDLOp.CREATE:
-                    if unresolved_query.idx_name in self.mock_catalog:
+                    existing_info = self.mock_catalog.get(unresolved_query.idx_name)
+                    if existing_info is not None:
+                        if existing_info:
+                            raise ValueError(
+                                f"Index name {unresolved_query.idx_name} collides with table {unresolved_query.idx_name}"
+                            )
                         raise ValueError(f"Index {unresolved_query.idx_name} already exists")
                     resolved_table = self._resolve_table([unresolved_query.table])
-                    # return IndexDDL(op=DDLOp.CREATE, idx_name=unresolved_query.idx_name)
                     # NOTE resuse of resolve proj maybe rename func
                     proj_col = self._resolve_projection(
                         unresolved_projection=unresolved_query.columns, resolved_tables=resolved_table
@@ -207,6 +211,8 @@ class QueryAnalyzer:
 
         if isinstance(unresolved_query, EndTransaction):
             return TxEndNode(tx_result=unresolved_query.tx_result)
+
+        raise TypeError(f"Cannot analyze statement of type {type(unresolved_query).__name__}")
 
     def _build_update(
         self,
@@ -254,7 +260,7 @@ class QueryAnalyzer:
                 index = column_indices[column.name]
 
                 padded_row[index] = ResolvedValue(
-                    type=DataType(value.type),
+                    type=column.type if value.type == "null" else DataType(value.type),
                     value=value.value,
                 )
 
@@ -370,8 +376,9 @@ class QueryAnalyzer:
         table_info = self.mock_catalog.get(table_name)
         if not table_info:
             raise ValueError(f"Table {table_name} does not exist")
+        qualifier = alias or table_name
         for k, v in table_info.items():
-            schema.append(ResolvedColumn(name=k, type=v, qualifier=alias))
+            schema.append(ResolvedColumn(name=k, type=v, qualifier=qualifier))
 
         return tuple(schema)
 
