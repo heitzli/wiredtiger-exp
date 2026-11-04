@@ -12,6 +12,12 @@ class ResolvedValue(BaseModel):
     type: DataType
     value: AllowedValue
 
+    def __str__(self) -> str:
+        return f"{self.value}"
+
+    def __repr__(self) -> str:
+        return f"{self.value}"
+
 
 class ResolvedTable(BaseModel):
     kind: Literal["ResolvedTable"] = "ResolvedTable"
@@ -55,12 +61,20 @@ class TableScan(AbstractAlgebraNode):
         return []
 
     def label(self) -> str:
-        return f"TableScan({self.table.name} AS {self.table.alias})"
+        if self.table.alias:
+            return f"TableScan({self.table.name} AS {self.table.alias})"
+        return f"TableScan({self.table.name})"
 
 
 class VirtualTableScan(AbstractAlgebraNode):
     kind: Literal["VirtualTableScan"] = "VirtualTableScan"
-    values: list[tuple[ResolvedValue]]
+    values: list[tuple[ResolvedValue, ...]]
+
+    def children(self) -> list[AbstractAlgebraNode]:
+        return []
+
+    def label(self) -> str:
+        return f"VirtualTableScan({len(self.values)} insert tuples {self.values[0]})"
 
 
 class Projection(AbstractAlgebraNode):
@@ -121,4 +135,26 @@ class Difference(AbstractAlgebraNode):
         return [self.left, self.right]
 
     def label(self) -> str:
-        return "EXCEPT"
+        return "DIFFERENCE"
+
+
+# NOTE TupleUpdate transforms each input tuple by evaluating assignment expressions
+# and replacing specified attribute values while preserving all other
+# attributes and the relation's cardinality. It provides a reusable mechanism
+# for UPDATE ops and can later support computed attributes, data
+# transformations, normalization, and other tuple-wise ops without
+# introducing dedicated operators for each use case.
+# Seperated from more general ExtendedProjection
+# NOTE this is very relational specific and might not generalize well over different datamodels
+class TupleUpdate(AbstractAlgebraNode):
+    kind: Literal["Extend"] = "Extend"
+
+    assignments: tuple[tuple[ResolvedColumn, Expr], ...]
+    child: AbstractAlgebraNode
+
+    def children(self) -> list[AbstractAlgebraNode]:
+        return [self.child]
+
+    def label(self) -> str:
+        assignments = ", ".join(f"{column.name} := {pretty(expr)}" for column, expr in self.assignments)
+        return f"TupleUpdate({assignments})"

@@ -6,14 +6,21 @@ from .expression import BinOp, ColumnRef, Expr, LiteralExpr, UnOp
 from .unibasql_algebra import (
     AbstractAlgebraNode,
     Cross,
+    Difference,
     Projection,
     ResolvedColumn,
     ResolvedTable,
+    ResolvedValue,
     Selection,
     TableScan,
+    TupleUpdate,
+    Union,
+    VirtualTableScan,
 )
 from .unibasql_unresolved import (
     DataType,
+    DMLOp,
+    SetOperation,
     Star,
     UnresolvedColumn,
     UnresolvedDML,
@@ -53,9 +60,73 @@ class QueryAnalyzer:
 
             return root
         if isinstance(unresolved_query, UnresolvedSetOperation):
-            pass
+            left = self.analyze_query(unresolved_query=unresolved_query.left)
+            right = self.analyze_query(unresolved_query=unresolved_query.right)
+            # TODO should check if the sets are compatible, e.g have the same columns!
+            match unresolved_query.op:
+                case SetOperation.UNION:
+                    return Union(left=left, right=right)
+
+                case SetOperation.EXCEPT:
+                    return Difference(left=left, right=right)
+
         if isinstance(unresolved_query, UnresolvedDML):
-            pass
+            resolved_table = self._resolve_table(tables=[unresolved_query.table])
+            if len(resolved_table) != 1:
+                raise ValueError(
+                    f"DDL statement can only be performed on exactly one table. Provided {len(resolved_table)} tables {resolved_table}"
+                )
+
+            match unresolved_query.op:
+                # TODO: should check if primary key is present!
+                case DMLOp.INSERT:
+                    all_columns = self._resolve_projection(
+                        unresolved_projection="*",
+                        resolved_tables=resolved_table,
+                    )
+
+                    if unresolved_query.columns:
+                        insert_columns = self._resolve_projection(
+                            unresolved_projection=unresolved_query.columns,
+                            resolved_tables=resolved_table,
+                        )
+                    else:
+                        insert_columns = all_columns
+
+                    for tup in unresolved_query.values:
+                        if len(tup) != len(insert_columns):
+                            raise ValueError(
+                                f"Length of columns ({len(insert_columns)}) "
+                                f"does not match length of insert tuple ({len(tup)}, {tup})"
+                            )
+
+                    padded_values = self._pad_insert_values(
+                        all_columns=all_columns,
+                        insert_columns=insert_columns,
+                        values=unresolved_query.values,
+                    )
+
+                    # NOTE: Resolved table has exactly on entry
+                    left = TableScan(table=resolved_table[0])
+                    right = VirtualTableScan(values=padded_values)
+                    return Union(left=left, right=right)
+                case DMLOp.UPDATE:
+                    all_columns = self._resolve_projection(unresolved_projection="*", resolved_tables=resolved_table)
+                    resolved_expr = self._resolve_expr(unresolved_query.expr, resolved_tables=resolved_table)
+                    update = self._build_update(
+                        table=resolved_table[0], where=resolved_expr, setlist=unresolved_query.setlist
+                    )
+                    return update
+                case DMLOp.DELETE:
+                    resolved_expr = self._resolve_expr(unresolved_query.expr, resolved_tables=resolved_table)
+                    left = TableScan(table=resolved_table[0])
+                    if resolved_expr:
+                        right = Selection(expr=resolved_expr, child=TableScan(table=resolved_table[0]))
+                    else:
+                        right = TableScan(table=resolved_table[0])
+
+                    return Difference(left=left, right=right)
+
         if isinstance(unresolved_query, UnresolvedTableDDL):
             pass
 
@@ -67,9 +138,65 @@ class QueryAnalyzer:
         #
         #
 
+    def _build_update(
+        self,
+        table: ResolvedTable,
+        where: Expr | None,
+        setlist: list[tuple[UnresolvedColumn, UnresolvedLiteralExpr]],
+    ) -> AbstractAlgebraNode:
+        scan = TableScan(table=table)
+        resolved_where = self._resolve_expr(where, resolved_tables=[table])
+        assignments = tuple(
+            (self._resolve_projection([column], [table])[0], self._resolve_expr(value, [table]))
+            for column, value in setlist
+        )
+
+        selected = Selection(expr=resolved_where, child=scan) if resolved_where is not None else scan
+        remaining = Difference(left=scan, right=selected)
+        updated = TupleUpdate(assignments=assignments, child=selected)
+
+        return Union(
+            left=remaining,
+            right=updated,
+        )
+
+    def _pad_insert_values(
+        self,
+        all_columns: tuple[ResolvedColumn, ...],
+        insert_columns: tuple[ResolvedColumn, ...],
+        values: list[list[UnresolvedLiteralExpr]],
+    ) -> list[tuple[ResolvedValue, ...]]:
+
+        column_indices = {column.name: i for i, column in enumerate(all_columns)}
+
+        padded_values = []
+
+        for row in values:
+            padded_row = [
+                ResolvedValue(
+                    type=column.type,
+                    value=None,
+                )
+                for column in all_columns
+            ]
+
+            for column, value in zip(insert_columns, row):
+                index = column_indices[column.name]
+
+                padded_row[index] = ResolvedValue(
+                    type=DataType(value.type),
+                    value=value.value,
+                )
+
+            padded_values.append(tuple(padded_row))
+
+        return padded_values
+
     def _resolve_expr(self, expr: Expr | None, resolved_tables: list[ResolvedTable]) -> Expr | None:
         if expr is None:
             return None
+        if isinstance(expr, (ColumnRef, LiteralExpr)):
+            return expr
         if isinstance(expr, UnresolvedColumn):
             candidates = [
                 (table, column)

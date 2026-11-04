@@ -72,7 +72,7 @@ class UnresolvedQuery(AbstractStatement, ABC):
 class UnresolvedLiteralExpr(Expr):
     """Represents a Literal Expression that has not been resolved, mirrors LiteralExpr"""
 
-    type: str
+    type: str  # FIXME: should be Datatype
     value: AllowedValue
 
 
