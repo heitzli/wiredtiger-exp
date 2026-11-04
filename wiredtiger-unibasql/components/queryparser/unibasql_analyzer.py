@@ -18,7 +18,9 @@ from .unibasql_algebra import (
     VirtualTableScan,
 )
 from .unibasql_ddl_nodes import AbstractDDLNode, IndexDDL, TableDDL
+from .unibasql_tcl_nodes import AbstractTCLNode, TransactionNode, TxEndNode, TxStartNode
 from .unibasql_unresolved import (
+    AbstractStatement,
     DataType,
     DDLOp,
     DMLOp,
@@ -54,7 +56,9 @@ class QueryAnalyzer:
     def __init__(self, mock_catalog: dict = MOCK_CATALOG) -> None:
         self.mock_catalog = mock_catalog
 
-    def analyze_query(self, unresolved_query: UnresolvedQuery) -> AbstractAlgebraNode | AbstractDDLNode:
+    def analyze_query(
+        self, unresolved_query: UnresolvedQuery | AbstractStatement
+    ) -> AbstractAlgebraNode | AbstractDDLNode | AbstractTCLNode:
         if isinstance(unresolved_query, UnresolvedDQL):
             resolved_tables = self._resolve_table(tables=unresolved_query.table)
             resolved_projection = self._resolve_projection(
@@ -190,17 +194,19 @@ class QueryAnalyzer:
                     return IndexDDL(op=DDLOp.DROP, table=resolved_table[0], idx_name=unresolved_query.idx_name)
 
         if isinstance(unresolved_query, Transaction):
-            pass
+            start = TxStartNode(tx_id=unresolved_query.tx_start.tx_id)
+            end = TxEndNode(tx_result=unresolved_query.tx_end.tx_result)
+            trees = []
+            for statemnt in unresolved_query.statements:
+                trees.append(self.analyze_query(statemnt))
+
+            return TransactionNode(tx_start=start, tx_end=end, statements=trees)
 
         if isinstance(unresolved_query, StartTransaction):
-            pass
+            return TxStartNode(tx_id=unresolved_query.tx_id)
 
         if isinstance(unresolved_query, EndTransaction):
-            pass
-        # TODO check TX
-        #
-        #
-        #
+            return TxEndNode(tx_result=unresolved_query.tx_result)
 
     def _build_update(
         self,
