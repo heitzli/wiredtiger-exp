@@ -4,7 +4,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict
 
 from .expression import Expr, pretty
-from .unibasql_unresolved import AllowedValue, DataType
+from .unibasql_unresolved import AllowedValue, ColumnConstraint, DataType
 
 
 class ResolvedValue(BaseModel):
@@ -34,6 +34,7 @@ class ResolvedColumn(BaseModel):
     kind: Literal["ResolvedColumn"] = "ResolvedColumn"
     name: str
     type: DataType
+    constraint: ColumnConstraint | None = None
     qualifier: str | None = None
 
 

@@ -161,7 +161,7 @@ class UnresolvedTableDDL(AbstractStatement):
 
 
 @dataclass(frozen=True)
-class StartTransaction:
+class StartTransaction(AbstractStatement):
     """Represents the beginning of a database transaction."""
 
     tx_id: str = Field(
@@ -171,14 +171,14 @@ class StartTransaction:
 
 
 @dataclass(frozen=True)
-class EndTransaction:
+class EndTransaction(AbstractStatement):
     """Represents the end of a database transaction."""
 
     tx_result: TxResult
 
 
 @dataclass(frozen=True)
-class Transaction:
+class Transaction(AbstractStatement):
     """Represents an entire transaction declared as a query.
 
     Example:

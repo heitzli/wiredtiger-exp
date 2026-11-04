@@ -17,11 +17,16 @@ from .unibasql_algebra import (
     Union,
     VirtualTableScan,
 )
+from .unibasql_ddl_nodes import AbstractDDLNode, IndexDDL, TableDDL
 from .unibasql_unresolved import (
     DataType,
+    DDLOp,
     DMLOp,
+    EndTransaction,
     SetOperation,
     Star,
+    StartTransaction,
+    Transaction,
     UnresolvedColumn,
     UnresolvedDML,
     UnresolvedDQL,
@@ -46,7 +51,10 @@ MOCK_CATALOG = {
 
 
 class QueryAnalyzer:
-    def analyze_query(self, unresolved_query: UnresolvedQuery) -> AbstractAlgebraNode:
+    def __init__(self, mock_catalog: dict = MOCK_CATALOG) -> None:
+        self.mock_catalog = mock_catalog
+
+    def analyze_query(self, unresolved_query: UnresolvedQuery) -> AbstractAlgebraNode | AbstractDDLNode:
         if isinstance(unresolved_query, UnresolvedDQL):
             resolved_tables = self._resolve_table(tables=unresolved_query.table)
             resolved_projection = self._resolve_projection(
@@ -128,11 +136,67 @@ class QueryAnalyzer:
                     return Difference(left=left, right=right)
 
         if isinstance(unresolved_query, UnresolvedTableDDL):
-            pass
+            match unresolved_query.op:
+                case DDLOp.CREATE:
+                    if unresolved_query.table.name in self.mock_catalog.keys():
+                        raise ValueError(f"Table {unresolved_query.table.name} already exists")
 
+                    resolved_columns = []
+                    for col in unresolved_query.table_schema:
+                        resolved_columns.append(
+                            ResolvedColumn(
+                                name=col.column.name,
+                                qualifier=col.column.qualifier,
+                                type=col.datatype,
+                                constraint=col.constraint,
+                            )
+                        )
+                    return TableDDL(
+                        op=DDLOp.CREATE,
+                        table=ResolvedTable(
+                            name=unresolved_query.table.name,
+                            alias=unresolved_query.table.alias,
+                            table_schema=tuple(resolved_columns),
+                        ),
+                    )
+                case DDLOp.DROP:
+                    resolved_table = self._resolve_table([unresolved_query.table])
+                    if len(resolved_table) != 1:
+                        raise ValueError("Only can drop one table at a time")
+                    return TableDDL(op=DDLOp.DROP, table=resolved_table[0])
         if isinstance(unresolved_query, UnresolvedIndexDDL):
+            match unresolved_query.op:
+                case DDLOp.CREATE:
+                    if unresolved_query.idx_name in self.mock_catalog:
+                        raise ValueError(f"Index {unresolved_query.idx_name} already exists")
+                    resolved_table = self._resolve_table([unresolved_query.table])
+                    # return IndexDDL(op=DDLOp.CREATE, idx_name=unresolved_query.idx_name)
+                    # NOTE resuse of resolve proj maybe rename func
+                    proj_col = self._resolve_projection(
+                        unresolved_projection=unresolved_query.columns, resolved_tables=resolved_table
+                    )
+                    # TODO proper index lookup from catalog and allow for index names to be the same over different tables
+                    # in the future
+
+                    return IndexDDL(
+                        op=DDLOp.CREATE, idx_name=unresolved_query.idx_name, table=resolved_table[0], columns=proj_col
+                    )
+
+                case DDLOp.DROP:
+                    resolved_table = self._resolve_table([unresolved_query.table])
+                    if unresolved_query.idx_name not in self.mock_catalog.keys():
+                        raise ValueError(f"Index {unresolved_query.idx_name} does not exist")
+
+                    return IndexDDL(op=DDLOp.DROP, table=resolved_table[0], idx_name=unresolved_query.idx_name)
+
+        if isinstance(unresolved_query, Transaction):
             pass
 
+        if isinstance(unresolved_query, StartTransaction):
+            pass
+
+        if isinstance(unresolved_query, EndTransaction):
+            pass
         # TODO check TX
         #
         #
@@ -297,7 +361,7 @@ class QueryAnalyzer:
 
     def _get_schema(self, table_name: str, alias: str | None = None) -> tuple[ResolvedColumn, ...]:
         schema: list[ResolvedColumn] = []
-        table_info = MOCK_CATALOG.get(table_name)
+        table_info = self.mock_catalog.get(table_name)
         if not table_info:
             raise ValueError(f"Table {table_name} does not exist")
         for k, v in table_info.items():
@@ -308,7 +372,7 @@ class QueryAnalyzer:
     def _resolve_table(self, tables: list[UnresolvedTable]) -> list[ResolvedTable]:
         resolved_tables: list[ResolvedTable] = []
         for table in tables:
-            if table.name not in MOCK_CATALOG.keys():
+            if table.name not in self.mock_catalog.keys():
                 raise ValueError(f"Table {table.name} does not exist")
             table_schema = self._get_schema(table_name=table.name, alias=table.alias)
             resolved_tables.append(ResolvedTable(name=table.name, alias=table.alias, table_schema=table_schema))

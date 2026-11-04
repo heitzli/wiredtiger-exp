@@ -16,9 +16,7 @@ MOCK_CATALOG = {
 if __name__ == "__main__":
     t1 = parse_unibasql(
         """
-        UPDATE employees SET salary = 100.0, active = TRUE WHERE name = 'Alice';
-
-
+        DROP INDEX test_idx ON employees;
         """
     )
     # print(t1)
