@@ -20,7 +20,7 @@ import pytest
 
 from components.broker import Broker
 from components.client import Client
-from components.queryparser import QueryProcessor
+from components.queryprocessor import QueryProcessor
 from components.storagemanager import StorageManagerComponent
 
 BROKER_SOCKET = "/tmp/broker.sock"  # hardcoded inside components.broker.Broker

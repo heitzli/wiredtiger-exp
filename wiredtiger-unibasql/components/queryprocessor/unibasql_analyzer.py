@@ -332,7 +332,7 @@ class QueryAnalyzer:
     def _apply_projection(
         self, root: AbstractAlgebraNode, projection: tuple[ResolvedColumn, ...]
     ) -> AbstractAlgebraNode:
-        return Projection(attributes=projection, child=root)
+        return Projection(columns=projection, child=root)
 
     def _resolve_projection(
         self, unresolved_projection: Star | list[UnresolvedColumn], resolved_tables: list[ResolvedTable]

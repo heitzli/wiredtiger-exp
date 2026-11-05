@@ -2,9 +2,9 @@
 
 import pytest
 
-from components.queryparser import QueryAnalyzer
-from components.queryparser.expression import BinOp, ColumnRef, LiteralExpr
-from components.queryparser.unibasql_algebra import (
+from components.queryprocessor import QueryAnalyzer
+from components.queryprocessor.expression import BinOp, ColumnRef, LiteralExpr
+from components.queryprocessor.unibasql_algebra import (
     Difference,
     ResolvedColumn,
     ResolvedTable,
@@ -15,7 +15,7 @@ from components.queryparser.unibasql_algebra import (
     Union,
     VirtualTableScan,
 )
-from components.queryparser.unibasql_unresolved import (
+from components.queryprocessor.unibasql_unresolved import (
     AllowedValue,
     DataType,
     DMLOp,
@@ -88,6 +88,7 @@ def test_insert_full_row() -> None:
                 )
             ]
         ),
+        custom={"source": "insert"},
     )
     assert QueryAnalyzer().analyze_query(query) == expected
 
@@ -106,6 +107,7 @@ def test_insert_multiple_rows() -> None:
                 (rv(2, DataType.INT), rv("b", DataType.STRING)),
             ]
         ),
+        custom={"source": "insert"},
     )
     assert QueryAnalyzer().analyze_query(query) == expected
 
@@ -132,6 +134,7 @@ def test_insert_with_column_list_pads_missing_with_typed_none() -> None:
                 )
             ]
         ),
+        custom={"source": "insert"},
     )
     assert QueryAnalyzer().analyze_query(query) == expected
 
@@ -156,6 +159,7 @@ def test_insert_values_placed_by_column_name_not_order() -> None:
                 )
             ]
         ),
+        custom={"source": "insert"},
     )
     assert QueryAnalyzer().analyze_query(query) == expected
 
@@ -193,6 +197,7 @@ def test_insert_null_literal_takes_target_column_type() -> None:
                 )
             ]
         ),
+        custom={"source": "insert"},
     )
     assert QueryAnalyzer().analyze_query(query) == expected
 
@@ -216,6 +221,7 @@ def test_insert_null_in_full_row_takes_target_column_type() -> None:
                 )
             ]
         ),
+        custom={"source": "insert"},
     )
     assert QueryAnalyzer().analyze_query(query) == expected
 
@@ -238,6 +244,7 @@ def test_update_with_where() -> None:
             assignments=((employees_col("salary", DataType.DOUBLE), LiteralExpr(type="double", value=1.5)),),
             child=selected,
         ),
+        custom={"source": "update"},
     )
     result = QueryAnalyzer().analyze_query(query)
     assert result == expected
@@ -263,6 +270,7 @@ def test_update_multiple_assignments_preserve_order() -> None:
             ),
             child=scan,
         ),
+        custom={"source": "update"},
     )
     assert QueryAnalyzer().analyze_query(query) == expected
 
@@ -282,6 +290,7 @@ def test_update_without_where() -> None:
             assignments=((employees_col("salary", DataType.DOUBLE), LiteralExpr(type="double", value=1.0)),),
             child=scan,
         ),
+        custom={"source": "update"},
     )
     result = QueryAnalyzer().analyze_query(query)
     assert result == expected
@@ -308,11 +317,16 @@ def test_delete_with_where() -> None:
             ),
             child=TableScan(table=employees_table()),
         ),
+        custom={"source": "delete"},
     )
     assert QueryAnalyzer().analyze_query(query) == expected
 
 
 def test_delete_without_where() -> None:
     query = UnresolvedDML(op=DMLOp.DELETE, table=UnresolvedTable(name="employees"))
-    expected = Difference(left=TableScan(table=employees_table()), right=TableScan(table=employees_table()))
+    expected = Difference(
+        left=TableScan(table=employees_table()),
+        right=TableScan(table=employees_table()),
+        custom={"source": "delete"},
+    )
     assert QueryAnalyzer().analyze_query(query) == expected

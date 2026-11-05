@@ -2,8 +2,8 @@
 
 import pytest
 
-from components.queryparser import QueryAnalyzer
-from components.queryparser.unibasql_unresolved import (
+from components.queryprocessor import QueryAnalyzer
+from components.queryprocessor.unibasql_unresolved import (
     DMLOp,
     UnresolvedColumn,
     UnresolvedDML,

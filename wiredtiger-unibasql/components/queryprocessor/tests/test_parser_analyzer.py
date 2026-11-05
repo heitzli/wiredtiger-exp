@@ -5,9 +5,9 @@ from typing import TypeAlias
 import pytest
 
 from components.errors import UnibaSQLSyntaxError
-from components.queryparser import QueryAnalyzer, parse_unibasql
-from components.queryparser.expression import BinOp, ColumnRef, LiteralExpr
-from components.queryparser.unibasql_algebra import (
+from components.queryprocessor import QueryAnalyzer, parse_unibasql
+from components.queryprocessor.expression import BinOp, ColumnRef, LiteralExpr
+from components.queryprocessor.unibasql_algebra import (
     AbstractAlgebraNode,
     Cross,
     Difference,
@@ -21,9 +21,9 @@ from components.queryparser.unibasql_algebra import (
     Union,
     VirtualTableScan,
 )
-from components.queryparser.unibasql_ddl_nodes import AbstractDDLNode, IndexDDL, TableDDL
-from components.queryparser.unibasql_tcl_nodes import AbstractTCLNode, TransactionNode, TxEndNode, TxStartNode
-from components.queryparser.unibasql_unresolved import (
+from components.queryprocessor.unibasql_ddl_nodes import AbstractDDLNode, IndexDDL, TableDDL
+from components.queryprocessor.unibasql_tcl_nodes import AbstractTCLNode, TransactionNode, TxEndNode, TxStartNode
+from components.queryprocessor.unibasql_unresolved import (
     AbstractStatement,
     ColumnConstraint,
     DataType,
@@ -82,14 +82,14 @@ def parse_and_analyze(sql: str, analyzer: QueryAnalyzer | None = None) -> Analyz
 
 def test_select_star_end_to_end() -> None:
     result = parse_and_analyze("SELECT * FROM employees")
-    expected = Projection(attributes=employees_schema("employees"), child=TableScan(table=employees_table()))
+    expected = Projection(columns=employees_schema("employees"), child=TableScan(table=employees_table()))
     assert result == expected
 
 
 def test_select_qualified_alias_where_end_to_end() -> None:
     result = parse_and_analyze("SELECT e.salary FROM employees AS e WHERE e.active = TRUE")
     expected = Projection(
-        attributes=(ResolvedColumn(name="salary", qualifier="e", type=DataType.DOUBLE),),
+        columns=(ResolvedColumn(name="salary", qualifier="e", type=DataType.DOUBLE),),
         child=Selection(
             expr=BinOp(
                 op="=", left=ColumnRef(name="active", qualifier="e"), right=LiteralExpr(type="bool", value=True)
@@ -105,7 +105,7 @@ def test_select_join_two_tables_end_to_end() -> None:
         "SELECT departments.name FROM employees, departments WHERE employees.department = departments.id"
     )
     expected = Projection(
-        attributes=(ResolvedColumn(name="name", qualifier="departments", type=DataType.STRING),),
+        columns=(ResolvedColumn(name="name", qualifier="departments", type=DataType.STRING),),
         child=Selection(
             expr=BinOp(
                 op="=",
@@ -122,11 +122,11 @@ def test_union_end_to_end() -> None:
     result = parse_and_analyze("SELECT name FROM employees UNION SELECT name FROM departments")
     expected = Union(
         left=Projection(
-            attributes=(ResolvedColumn(name="name", qualifier="employees", type=DataType.STRING),),
+            columns=(ResolvedColumn(name="name", qualifier="employees", type=DataType.STRING),),
             child=TableScan(table=employees_table()),
         ),
         right=Projection(
-            attributes=(ResolvedColumn(name="name", qualifier="departments", type=DataType.STRING),),
+            columns=(ResolvedColumn(name="name", qualifier="departments", type=DataType.STRING),),
             child=TableScan(table=departments_table()),
         ),
     )
@@ -137,11 +137,11 @@ def test_except_end_to_end() -> None:
     result = parse_and_analyze("SELECT id FROM employees EXCEPT SELECT id FROM departments")
     expected = Difference(
         left=Projection(
-            attributes=(ResolvedColumn(name="id", qualifier="employees", type=DataType.INT),),
+            columns=(ResolvedColumn(name="id", qualifier="employees", type=DataType.INT),),
             child=TableScan(table=employees_table()),
         ),
         right=Projection(
-            attributes=(ResolvedColumn(name="id", qualifier="departments", type=DataType.INT),),
+            columns=(ResolvedColumn(name="id", qualifier="departments", type=DataType.INT),),
             child=TableScan(table=departments_table()),
         ),
     )
@@ -163,6 +163,7 @@ def test_insert_with_column_list_end_to_end() -> None:
                 )
             ]
         ),
+        custom={"source": "insert"},
     )
     assert result == expected
 
@@ -182,6 +183,7 @@ def test_insert_full_row_end_to_end() -> None:
                 )
             ]
         ),
+        custom={"source": "insert"},
     )
     assert result == expected
 
@@ -204,6 +206,7 @@ def test_update_with_where_end_to_end() -> None:
             ),
             child=selected,
         ),
+        custom={"source": "update"},
     )
     assert result == expected
     assert isinstance(result, Union)
@@ -224,6 +227,7 @@ def test_update_without_where_end_to_end() -> None:
             ),
             child=scan,
         ),
+        custom={"source": "update"},
     )
     assert result == expected
 
@@ -240,13 +244,18 @@ def test_delete_with_where_end_to_end() -> None:
             ),
             child=TableScan(table=employees_table()),
         ),
+        custom={"source": "delete"},
     )
     assert result == expected
 
 
 def test_delete_without_where_end_to_end() -> None:
     result = parse_and_analyze("DELETE FROM employees")
-    expected = Difference(left=TableScan(table=employees_table()), right=TableScan(table=employees_table()))
+    expected = Difference(
+        left=TableScan(table=employees_table()),
+        right=TableScan(table=employees_table()),
+        custom={"source": "delete"},
+    )
     assert result == expected
 
 
@@ -331,6 +340,7 @@ def test_transaction_end_to_end() -> None:
                     ),
                     child=TableScan(table=employees_table()),
                 ),
+                custom={"source": "delete"},
             )
         ],
     )

@@ -2,9 +2,9 @@
 
 import pytest
 
-from components.queryparser import QueryAnalyzer
-from components.queryparser.expression import BinOp, ColumnRef, LiteralExpr
-from components.queryparser.unibasql_algebra import (
+from components.queryprocessor import QueryAnalyzer
+from components.queryprocessor.expression import BinOp, ColumnRef, LiteralExpr
+from components.queryprocessor.unibasql_algebra import (
     Difference,
     Projection,
     ResolvedColumn,
@@ -12,8 +12,8 @@ from components.queryparser.unibasql_algebra import (
     Selection,
     TableScan,
 )
-from components.queryparser.unibasql_tcl_nodes import TransactionNode, TxEndNode, TxStartNode
-from components.queryparser.unibasql_unresolved import (
+from components.queryprocessor.unibasql_tcl_nodes import TransactionNode, TxEndNode, TxStartNode
+from components.queryprocessor.unibasql_unresolved import (
     DataType,
     DMLOp,
     EndTransaction,
@@ -79,7 +79,7 @@ def test_transaction_analyzes_statements_recursively(tx_result: TxResult) -> Non
         tx_end=TxEndNode(tx_result=tx_result),
         statements=[
             Projection(
-                attributes=(ResolvedColumn(name="id", qualifier="employees", type=DataType.INT),),
+                columns=(ResolvedColumn(name="id", qualifier="employees", type=DataType.INT),),
                 child=scan,
             ),
             Difference(
@@ -92,6 +92,7 @@ def test_transaction_analyzes_statements_recursively(tx_result: TxResult) -> Non
                     ),
                     child=TableScan(table=employees_table()),
                 ),
+                custom={"source": "delete"},
             ),
         ],
     )

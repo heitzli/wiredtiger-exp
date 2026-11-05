@@ -3,7 +3,7 @@
 import pytest
 
 from components.errors import UnibaSQLSyntaxError
-from components.queryparser.unibasql_parser import parse_unibasql
+from components.queryprocessor.unibasql_parser import parse_unibasql
 
 
 @pytest.mark.parametrize(

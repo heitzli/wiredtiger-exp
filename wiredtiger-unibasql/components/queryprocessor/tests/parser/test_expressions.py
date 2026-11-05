@@ -10,9 +10,9 @@ from typing import cast
 
 import pytest
 
-from components.queryparser.expression import BinOp, Expr, UnOp
-from components.queryparser.unibasql_parser import parse_unibasql
-from components.queryparser.unibasql_unresolved import (
+from components.queryprocessor.expression import BinOp, Expr, UnOp
+from components.queryprocessor.unibasql_parser import parse_unibasql
+from components.queryprocessor.unibasql_unresolved import (
     UnresolvedColumn,
     UnresolvedDQL,
     UnresolvedLiteralExpr,

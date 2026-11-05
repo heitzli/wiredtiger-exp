@@ -1,8 +1,8 @@
 """Tests for DQL (SELECT) statements: projections, table refs and WHERE clauses."""
 
-from components.queryparser.expression import BinOp
-from components.queryparser.unibasql_parser import parse_unibasql
-from components.queryparser.unibasql_unresolved import (
+from components.queryprocessor.expression import BinOp
+from components.queryprocessor.unibasql_parser import parse_unibasql
+from components.queryprocessor.unibasql_unresolved import (
     UnresolvedColumn,
     UnresolvedDQL,
     UnresolvedLiteralExpr,

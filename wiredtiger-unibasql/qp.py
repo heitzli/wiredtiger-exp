@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from components.queryparser import QueryProcessor
+from components.queryprocessor import QueryProcessor
 
 qp = QueryProcessor(
     name="queryprocessor",

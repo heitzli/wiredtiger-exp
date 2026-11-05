@@ -2,10 +2,10 @@
 
 import pytest
 
-from components.queryparser import QueryAnalyzer
-from components.queryparser.unibasql_algebra import ResolvedColumn, ResolvedTable
-from components.queryparser.unibasql_ddl_nodes import IndexDDL, TableDDL
-from components.queryparser.unibasql_unresolved import (
+from components.queryprocessor import QueryAnalyzer
+from components.queryprocessor.unibasql_algebra import ResolvedColumn, ResolvedTable
+from components.queryprocessor.unibasql_ddl_nodes import IndexDDL, TableDDL
+from components.queryprocessor.unibasql_unresolved import (
     ColumnConstraint,
     DataType,
     DDLOp,

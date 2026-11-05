@@ -5,7 +5,7 @@ import wiredtiger
 from wiredtiger import wiredtiger_strerror
 
 from ..errors import WiredTigerError
-from ..queryparser import AbstractAlgebraNode, Projection, Selection, TableScan, dict_satisfies
+from ..queryprocessor import AbstractAlgebraNode, Projection, Selection, TableScan, dict_satisfies
 from .value_utils import decode_value
 
 

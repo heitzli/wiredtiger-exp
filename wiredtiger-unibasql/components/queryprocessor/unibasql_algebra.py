@@ -54,6 +54,33 @@ class AbstractAlgebraNode(BaseModel, ABC):
             child.print_tree(indent + 1)
 
 
+class AlgebraNode(AbstractAlgebraNode):
+    """
+    A generic class that can be used to implement any of the existing and potential new algebra nodes.
+    """
+
+    kind: str
+    table: ResolvedTable | None = None
+    values: list[tuple[ResolvedValue, ...]] | None = None
+    columns: tuple[ResolvedColumn, ...] | None = None
+    expr: Expr | None = None
+    left: AbstractAlgebraNode | None = None
+    right: AbstractAlgebraNode | None = None
+    assignments: tuple[tuple[ResolvedColumn, Expr], ...] | None = None
+
+    def children(self) -> list[AbstractAlgebraNode]:
+        children = []
+        if self.left:
+            children.append(self.left)
+        if self.right:
+            children.append(self.right)
+
+        return children
+
+    def label(self) -> str:
+        return f"{self.kind}"
+
+
 class TableScan(AbstractAlgebraNode):
     kind: Literal["TableScan"] = "TableScan"
     table: ResolvedTable
@@ -80,14 +107,14 @@ class VirtualTableScan(AbstractAlgebraNode):
 
 class Projection(AbstractAlgebraNode):
     kind: Literal["Projection"] = "Projection"
-    attributes: tuple[ResolvedColumn, ...]  # NOTE: star is expanded to all columns present in table
+    columns: tuple[ResolvedColumn, ...]  # NOTE: star is expanded to all columns present in table
     child: AbstractAlgebraNode
 
     def children(self) -> list[AbstractAlgebraNode]:
         return [self.child]
 
     def label(self) -> str:
-        projection_str = ", ".join(f"{col.qualifier}.{col.name}" for col in self.attributes)
+        projection_str = ", ".join(f"{col.qualifier}.{col.name}" for col in self.columns)
         return f"π[{projection_str}]"
 
 
