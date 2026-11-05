@@ -1,9 +1,14 @@
+import io
 from abc import ABC, abstractmethod
-from typing import Literal
+from collections.abc import Mapping
+from pathlib import Path
+from typing import Any, ClassVar, Literal
 
+import avro.io
+import avro.schema
 from pydantic import BaseModel, ConfigDict
 
-from .expression import Expr, pretty
+from .expression import BinOp, ColumnRef, Expr, LiteralExpr, TableRef, UnOp, pretty
 from .unibasql_unresolved import AllowedValue, ColumnConstraint, DataType
 
 
@@ -42,6 +47,20 @@ class AbstractAlgebraNode(BaseModel, ABC):
     model_config = ConfigDict(frozen=True)
     custom: dict[str, str] | None = None
 
+    # TODO in the future each component will have their own protocol folder for the moment ref the "global proto folder"
+    _ALGEBRA_NODE_SCHEMA: ClassVar[avro.schema.Schema] = avro.schema.parse(
+        (Path(__file__).resolve().parents[2] / "protocol" / "algebranode.avsc").read_text(encoding="utf-8")
+    )
+    _AVRO_NODE_KINDS: ClassVar[dict[str, type]] = {}
+
+    @classmethod
+    def __pydantic_init_subclass__(cls, **kwargs: Any) -> None:
+        super().__pydantic_init_subclass__(**kwargs)
+        # kinds self-register here, depends on pydantic
+        kind_field = cls.model_fields.get("kind", None)
+        if kind_field is not None and isinstance(kind_field.default, str):
+            cls._AVRO_NODE_KINDS[kind_field.default] = cls
+
     @abstractmethod
     def children(self) -> list[AbstractAlgebraNode]: ...
 
@@ -53,10 +72,272 @@ class AbstractAlgebraNode(BaseModel, ABC):
         for child in self.children():
             child.print_tree(indent + 1)
 
+    def to_avro(self) -> dict[str, Any]:
+        """Render this tree as the plain dict matching the avro AlgebraNode record."""
+        return self._node_to_avro()
+
+    def to_avro_bytes(self) -> bytes:
+        """Binary-encode this tree using the compiled protocol/algebranode.avsc."""
+        buffer = io.BytesIO()
+        avro.io.DatumWriter(self._ALGEBRA_NODE_SCHEMA).write(self.to_avro(), avro.io.BinaryEncoder(buffer))
+        return buffer.getvalue()
+
+    @classmethod
+    def from_avro(cls, datum: Mapping[str, Any]) -> AbstractAlgebraNode:
+        """Rebuild a tree from a dict matching the avro AlgebraNode record."""
+        return cls._node_from_avro(datum)
+
+    @classmethod
+    def from_avro_bytes(cls, raw: bytes) -> AbstractAlgebraNode:
+        """Decode bytes produced by :meth:`to_avro_bytes` back into a tree."""
+        datum = avro.io.DatumReader(cls._ALGEBRA_NODE_SCHEMA).read(avro.io.BinaryDecoder(io.BytesIO(raw)))
+        return cls.from_avro(datum)
+
+    def _node_to_avro(self) -> dict[str, Any]:
+        """Python algebra tree -> plain dict matching the avro AlgebraNode record."""
+        # NOTE: prefill every record field (all have avro defaults) so DatumWriter always finds a value.
+        datum: dict[str, Any] = {
+            "kind": self.kind,
+            "table": None,
+            "values": None,
+            "columns": None,
+            "expr": None,
+            "left": None,
+            "right": None,
+            "child": None,
+            "assignments": None,
+            "custom": self.custom,
+        }
+        match self:
+            case TableScan():
+                datum["table"] = self._resolved_table_to_avro(self.table)
+            case VirtualTableScan():
+                datum["values"] = self._values_rows_to_avro(self.values)
+            case Projection():
+                datum["columns"] = self._columns_to_avro(self.columns)
+                datum["child"] = self.child._node_to_avro()
+            case Selection():
+                datum["expr"] = self._expr_to_avro(self.expr)
+                datum["child"] = self.child._node_to_avro()
+            case TupleUpdate():
+                datum["assignments"] = self._assignments_to_avro(self.assignments)
+                datum["child"] = self.child._node_to_avro()
+            case Cross() | Union() | Difference():
+                datum["left"] = self.left._node_to_avro()
+                datum["right"] = self.right._node_to_avro()
+            case AlgebraNode():
+                if self.table is not None:
+                    datum["table"] = self._resolved_table_to_avro(self.table)
+                if self.values is not None:
+                    datum["values"] = self._values_rows_to_avro(self.values)
+                if self.columns is not None:
+                    datum["columns"] = self._columns_to_avro(self.columns)
+                if self.expr is not None:
+                    datum["expr"] = self._expr_to_avro(self.expr)
+                if self.left is not None:
+                    datum["left"] = self.left._node_to_avro()
+                if self.right is not None:
+                    datum["right"] = self.right._node_to_avro()
+                if self.child is not None:
+                    datum["child"] = self.child._node_to_avro()
+                if self.assignments is not None:
+                    datum["assignments"] = self._assignments_to_avro(self.assignments)
+            case _:
+                raise ValueError(f"Cannot serialize algebra node of kind {self.kind!r}")
+        return datum
+
+    def _expr_to_avro(self, expr: Expr) -> dict[str, Any]:
+        """Python Expr -> avro Expr wrapper record ``{"expr": <typed inner record>}``."""
+        match expr:
+            case LiteralExpr():
+                inner: dict[str, Any] = {
+                    "kind": "LiteralExpr",
+                    "type": expr.type,
+                    "value": expr.value,
+                    "custom": expr.custom,
+                }
+            case BinOp():
+                inner = {
+                    "kind": "BinOp",
+                    "op": expr.op,
+                    "left": self._expr_to_avro(expr.left),
+                    "right": self._expr_to_avro(expr.right),
+                    "custom": expr.custom,
+                }
+            case UnOp():
+                inner = {"kind": "UnOp", "op": expr.op, "expr": self._expr_to_avro(expr.expr), "custom": expr.custom}
+            case ColumnRef():
+                inner = {"kind": "ColumnRef", "name": expr.name, "qualifier": expr.qualifier, "custom": expr.custom}
+            case TableRef():
+                inner = {"kind": "TableRef", "name": expr.name, "alias": expr.alias, "custom": expr.custom}
+            case _:
+                raise ValueError(f"Cannot serialize expression of type {type(expr).__name__}")
+        return {"expr": inner}
+
+    def _resolved_column_to_avro(self, column: ResolvedColumn) -> dict[str, Any]:
+        return {
+            "kind": "ResolvedColumn",
+            "name": column.name,
+            "type": column.type.name,
+            "constraint": column.constraint.name if column.constraint is not None else None,
+            "qualifier": column.qualifier,
+            "custom": None,
+        }
+
+    def _resolved_value_to_avro(self, row_value: ResolvedValue) -> dict[str, Any]:
+        return {"kind": "ResolvedValue", "type": row_value.type.name, "value": row_value.value, "custom": None}
+
+    def _resolved_table_to_avro(self, table: ResolvedTable) -> dict[str, Any]:
+        return {
+            "kind": "ResolvedTable",
+            "name": table.name,
+            # NOTE: avro spelling is camelCase tableSchema; the python field is table_schema.
+            "tableSchema": [self._resolved_column_to_avro(column) for column in table.table_schema],
+            "alias": table.alias,
+            "custom": None,
+        }
+
+    def _values_rows_to_avro(self, values: list[tuple[ResolvedValue, ...]]) -> list[list[dict[str, Any]]]:
+        return [[self._resolved_value_to_avro(row_value) for row_value in row] for row in values]
+
+    def _columns_to_avro(self, columns: tuple[ResolvedColumn, ...]) -> list[dict[str, Any]]:
+        return [self._resolved_column_to_avro(column) for column in columns]
+
+    def _assignments_to_avro(self, assignments: tuple[tuple[ResolvedColumn, Expr], ...]) -> list[dict[str, Any]]:
+        return [
+            {"column": self._resolved_column_to_avro(column), "expr": self._expr_to_avro(assignment_expr)}
+            for column, assignment_expr in assignments
+        ]
+
+    @classmethod
+    def _node_from_avro(cls, datum: Mapping[str, Any]) -> AbstractAlgebraNode:
+        """Plain dict matching the avro AlgebraNode record -> Python algebra tree."""
+        custom = datum.get("custom")
+        match datum["kind"]:
+            case "TableScan":
+                return TableScan(table=cls._resolved_table_from_avro(datum["table"]), custom=custom)
+            case "VirtualTableScan":
+                return VirtualTableScan(values=cls._values_rows_from_avro(datum["values"]), custom=custom)
+            case "Projection":
+                return Projection(
+                    columns=cls._columns_from_avro(datum["columns"]),
+                    child=cls._node_from_avro(datum["child"]),
+                    custom=custom,
+                )
+            case "Selection":
+                return Selection(
+                    expr=cls._expr_from_avro(datum["expr"]), child=cls._node_from_avro(datum["child"]), custom=custom
+                )
+            case "TupleUpdate":
+                return TupleUpdate(
+                    assignments=cls._assignments_from_avro(datum["assignments"]),
+                    child=cls._node_from_avro(datum["child"]),
+                    custom=custom,
+                )
+            case "Cross" | "Union" | "Difference":
+                node_class = cls._AVRO_NODE_KINDS[datum["kind"]]
+                return node_class(
+                    left=cls._node_from_avro(datum["left"]),
+                    right=cls._node_from_avro(datum["right"]),
+                    custom=custom,
+                )
+            case _:
+                # NOTE: forward compatibility — a reader that does not know a kind still receives
+                # the plan as a generic AlgebraNode instead of failing the whole decode.
+                return AlgebraNode(
+                    kind=datum["kind"],
+                    table=cls._resolved_table_from_avro(datum["table"]) if datum.get("table") is not None else None,
+                    values=cls._values_rows_from_avro(datum["values"]) if datum.get("values") is not None else None,
+                    columns=cls._columns_from_avro(datum["columns"]) if datum.get("columns") is not None else None,
+                    expr=cls._expr_from_avro(datum["expr"]) if datum.get("expr") is not None else None,
+                    left=cls._node_from_avro(datum["left"]) if datum.get("left") is not None else None,
+                    right=cls._node_from_avro(datum["right"]) if datum.get("right") is not None else None,
+                    child=cls._node_from_avro(datum["child"]) if datum.get("child") is not None else None,
+                    assignments=(
+                        cls._assignments_from_avro(datum["assignments"])
+                        if datum.get("assignments") is not None
+                        else None
+                    ),
+                    custom=custom,
+                )
+
+    @classmethod
+    def _expr_from_avro(cls, datum: Mapping[str, Any]) -> Expr:
+        """avro Expr wrapper record -> Python Expr (dispatch on the inner record's kind)."""
+        inner = datum["expr"]
+        match inner["kind"]:
+            case "LiteralExpr":
+                value = inner["value"]
+                # NOTE: ints ride the double branch on the wire (see the LiteralExpr notes in
+                # algebranode.avdl); renormalize them to python ints, NULL stays None.
+                if inner["type"] == "int" and value is not None:
+                    value = int(value)
+                return LiteralExpr(type=inner["type"], value=value, custom=inner["custom"])
+            case "BinOp":
+                return BinOp(
+                    op=inner["op"],
+                    left=cls._expr_from_avro(inner["left"]),
+                    right=cls._expr_from_avro(inner["right"]),
+                    custom=inner["custom"],
+                )
+            case "UnOp":
+                return UnOp(op=inner["op"], expr=cls._expr_from_avro(inner["expr"]), custom=inner["custom"])
+            case "ColumnRef":
+                return ColumnRef(name=inner["name"], qualifier=inner["qualifier"], custom=inner["custom"])
+            case "TableRef":
+                return TableRef(name=inner["name"], alias=inner["alias"], custom=inner["custom"])
+            case _:
+                raise ValueError(f"Unknown expression kind {inner['kind']!r}")
+
+    @classmethod
+    def _resolved_column_from_avro(cls, datum: Mapping[str, Any]) -> ResolvedColumn:
+        return ResolvedColumn(
+            name=datum["name"],
+            # NOTE: enums commute via their symbol names (avro STRING <-> python DataType.STRING).
+            type=DataType[datum["type"]],
+            constraint=ColumnConstraint[datum["constraint"]] if datum["constraint"] is not None else None,
+            qualifier=datum["qualifier"],
+        )
+
+    @classmethod
+    def _resolved_value_from_avro(cls, datum: Mapping[str, Any]) -> ResolvedValue:
+        value_type = DataType[datum["type"]]
+        value = datum["value"]
+        # NOTE: ints ride the double branch on the wire (see the LiteralExpr notes in
+        # algebranode.avdl); renormalize them to python ints, NULL (unbound column) stays None.
+        if value_type is DataType.INT and value is not None:
+            value = int(value)
+        return ResolvedValue(type=value_type, value=value)
+
+    @classmethod
+    def _resolved_table_from_avro(cls, datum: Mapping[str, Any]) -> ResolvedTable:
+        return ResolvedTable(
+            name=datum["name"],
+            # NOTE: avro spelling is camelCase tableSchema; the python field is table_schema.
+            table_schema=tuple(cls._resolved_column_from_avro(column) for column in datum["tableSchema"]),
+            alias=datum["alias"],
+        )
+
+    @classmethod
+    def _values_rows_from_avro(cls, values: list) -> list[tuple[ResolvedValue, ...]]:
+        return [tuple(cls._resolved_value_from_avro(row_value) for row_value in row) for row in values]
+
+    @classmethod
+    def _columns_from_avro(cls, columns: list) -> tuple[ResolvedColumn, ...]:
+        return tuple(cls._resolved_column_from_avro(column) for column in columns)
+
+    @classmethod
+    def _assignments_from_avro(cls, assignments: list) -> tuple[tuple[ResolvedColumn, Expr], ...]:
+        return tuple(
+            (cls._resolved_column_from_avro(assignment["column"]), cls._expr_from_avro(assignment["expr"]))
+            for assignment in assignments
+        )
+
 
 class AlgebraNode(AbstractAlgebraNode):
     """
     A generic class that can be used to implement any of the existing and potential new algebra nodes.
+
     """
 
     kind: str
@@ -66,16 +347,13 @@ class AlgebraNode(AbstractAlgebraNode):
     expr: Expr | None = None
     left: AbstractAlgebraNode | None = None
     right: AbstractAlgebraNode | None = None
+    child: AbstractAlgebraNode | None = None
     assignments: tuple[tuple[ResolvedColumn, Expr], ...] | None = None
 
     def children(self) -> list[AbstractAlgebraNode]:
-        children = []
-        if self.left:
-            children.append(self.left)
-        if self.right:
-            children.append(self.right)
-
-        return children
+        # NOTE: concrete nodes use either left/right (two inputs) or child (one input);
+        # the generic node mirrors the wire record and may populate any subset.
+        return [c for c in (self.left, self.right, self.child) if c is not None]
 
     def label(self) -> str:
         return f"{self.kind}"

@@ -4,7 +4,7 @@ protocol StorageManager {
   import idl "errors.avdl";
 
   record ExecuteQueryRequest {
-    document.queryprocessor.algebra.AlgebraNode plan;
+    unibasql.queryprocessor.algebra.AlgebraNode plan;
     union {null, map<string>} custom = null;
   }
 

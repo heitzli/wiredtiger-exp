@@ -47,6 +47,7 @@ class UnOp(Expr):
 
 
 class ColumnRef(Expr):
+    kind: Literal["ColumnRef"] = "ColumnRef"
     name: str
     qualifier: str | None = None
 
@@ -57,5 +58,6 @@ class ColumnRef(Expr):
 
 
 class TableRef(Expr):
+    kind: Literal["TableRef"] = "TableRef"
     name: str
     alias: str | None = None

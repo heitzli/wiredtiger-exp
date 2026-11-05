@@ -1,95 +1,88 @@
-schema document.queryprocessor.algebra.AlgebraNode;
+schema unibasql.queryprocessor.algebra.AlgebraNode;
 
-@namespace("document.queryprocessor.algebra")
+@namespace("unibasql.queryprocessor.algebra")
 record AlgebraNode {
-  // Order matters for union resolution! especially if similar fields
-  union {CreateTable, DeleteTable, Delete, Insert, Update, TableScan, Projection, Selection} node;
-}
-
-@namespace("document.queryprocessor.algebra")
-record CreateTable {
-  string kind = "CreateTable";
-  string table;
-  union {null, map<string>} custom = null;
-}
-
-// TODO check resolving since same fields as createTable
-@namespace("document.queryprocessor.algebra")
-record DeleteTable {
-  string kind = "DeleteTable";
-  string table;
-  union {null, map<string>} custom = null;
-}
-
-@namespace("document.queryprocessor.algebra")
-record Delete {
-  string kind = "Delete";
-  string table;
+  string kind;
+  ResolvedTable? table = null;
+  union{null, array<array<ResolvedValue>>} values = null;
+  union{null, array<ResolvedColumn>} columns = null;
   Expr? expr = null;
+  AlgebraNode? left = null;
+  AlgebraNode? right = null;
+  AlgebraNode? child = null;
+  union{null, array<Assignment>} assignments = null;
   union {null, map<string>} custom = null;
 }
 
-@namespace("document.queryprocessor.algebra")
-record Insert {
-  string kind = "Insert";
-  string table;
-  array<map<LiteralExpr>> values;
-  union {null, map<string>} custom = null;
+@namespace("unibasql.queryprocessor.algebra")
+enum DataType {
+  STRING,
+  BOOL,
+  INT,
+  DOUBLE
 }
 
-@namespace("document.queryprocessor.algebra")
-record Update {
-  string kind = "Update";
-  string table;
-  array<kvpair> kv;
-  Expr? expr = null;
-  union {null, map<string>} custom = null;
+@namespace("unibasql.queryprocessor.algebra")
+enum ColumnConstraint {
+  NOT_NULL,
+  PRIMARY_KEY
 }
 
-@namespace("document.queryprocessor.algebra")
-record kvpair {
-  string key;
-  LiteralExpr value;
-  union {null, map<string>} custom = null;
-}
-
-@namespace("document.queryprocessor.algebra")
-record TableScan {
-  string kind = "TableScan";
-  string table;
-  union {null, map<string>} custom = null;
-}
-
-@namespace("document.queryprocessor.algebra")
-record Projection {
-  string kind = "Projection";
-  array<AttributeRef> attributes;
-  AlgebraNode child;
-  union {null, map<string>} custom = null;
-}
-
-@namespace("document.queryprocessor.algebra")
-record Selection {
-  string kind = "Selection";
-  AlgebraNode child;
-  Expr expr;
-  union {null, map<string>} custom = null;
-}
-
-
-@namespace("document.queryprocessor.algebra")
-record Expr {
-  union {LiteralExpr, BinOp, UnOp, AttributeRef} expr;
-}
-
-@namespace("document.queryprocessor.algebra")
-record AttributeRef {
-  string kind = "AttributeRef";
+@namespace("unibasql.queryprocessor.algebra")
+record ResolvedTable {
+  string kind = "ResolvedTable";
   string name;
+  array<ResolvedColumn> tableSchema;
+  string? alias = null;
   union {null, map<string>} custom = null;
 }
 
-@namespace("document.queryprocessor.algebra")
+@namespace("unibasql.queryprocessor.algebra")
+record ResolvedColumn {
+  string kind = "ResolvedColumn";
+  string name;
+  DataType type;
+  ColumnConstraint? constraint = null;
+  string? qualifier = null;
+  union {null, map<string>} custom = null;
+}
+
+@namespace("unibasql.queryprocessor.algebra")
+record ResolvedValue {
+  string kind = "ResolvedValue";
+  DataType type;
+  union {int, long, float, double, string, boolean, null} value;
+  union {null, map<string>} custom = null;
+}
+
+@namespace("unibasql.queryprocessor.algebra")
+record Assignment {
+    ResolvedColumn column;
+    Expr expr;
+}
+
+@namespace("unibasql.queryprocessor.algebra")
+record Expr {
+  union {LiteralExpr, BinOp, UnOp, TableRef, ColumnRef} expr;
+}
+
+@namespace("unibasql.queryprocessor.algebra")
+record TableRef {
+  string kind = "TableRef";
+  string name;
+  string? alias = null;
+  union {null, map<string>} custom = null;
+}
+
+@namespace("unibasql.queryprocessor.algebra")
+record ColumnRef {
+  string kind = "ColumnRef";
+  string name;
+  string? qualifier = null;
+  union {null, map<string>} custom = null;
+}
+
+@namespace("unibasql.queryprocessor.algebra")
 record LiteralExpr {
   string kind = "LiteralExpr";
   string type;
@@ -103,11 +96,12 @@ record LiteralExpr {
   // pushes floats into the float32 branch (1.79 -> 1.7899999618530273).
   // If exact int round-trips are ever needed, normalize on decode instead:
   // from_avro_expr: if type == "int": value = int(value).
-  union {int, long, float, double, string, null} value;
+  union {int, long, float, double, string, boolean, null} value;
+  union {null, map<string>} custom = null;
 }
 
 
-@namespace("document.queryprocessor.algebra")
+@namespace("unibasql.queryprocessor.algebra")
 record BinOp {
   string kind = "BinOp";
   string op;
@@ -116,7 +110,7 @@ record BinOp {
   union {null, map<string>} custom = null;
 }
 
-@namespace("document.queryprocessor.algebra")
+@namespace("unibasql.queryprocessor.algebra")
 record UnOp {
   string kind = "UnOp";
   string op;
