@@ -2,7 +2,7 @@
 
 The unresolved statements are constructed directly (without the parser) so these tests
 isolate the analyzer; end-to-end parser -> analyzer coverage lives in
-``components/queryparser/tests/test_parser_analyzer.py``.
+``components/queryprocessor/tests/test_parser_analyzer.py``.
 """
 
 from components.queryprocessor import QueryAnalyzer
