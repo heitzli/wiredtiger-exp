@@ -121,7 +121,7 @@ class QueryAnalyzer:
                     # NOTE: Resolved table has exactly on entry
                     left = TableScan(table=resolved_table[0])
                     right = VirtualTableScan(values=padded_values)
-                    return Union(left=left, right=right)
+                    return Union(left=left, right=right, custom={"source": "insert"})
                 case DMLOp.UPDATE:
                     all_columns = self._resolve_projection(unresolved_projection="*", resolved_tables=resolved_table)
                     resolved_expr = self._resolve_expr(unresolved_query.expr, resolved_tables=resolved_table)
@@ -137,7 +137,7 @@ class QueryAnalyzer:
                     else:
                         right = TableScan(table=resolved_table[0])
 
-                    return Difference(left=left, right=right)
+                    return Difference(left=left, right=right, custom={"source": "delete"})
 
         if isinstance(unresolved_query, UnresolvedTableDDL):
             match unresolved_query.op:
@@ -231,10 +231,7 @@ class QueryAnalyzer:
         remaining = Difference(left=scan, right=selected)
         updated = TupleUpdate(assignments=assignments, child=selected)
 
-        return Union(
-            left=remaining,
-            right=updated,
-        )
+        return Union(left=remaining, right=updated, custom={"source": "update"})
 
     def _pad_insert_values(
         self,
