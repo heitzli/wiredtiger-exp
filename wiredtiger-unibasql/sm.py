@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from components import StorageManagerComponent
+from components.storagemanager import StorageManagerComponent
 
 if __name__ == "__main__":
     sm = StorageManagerComponent(

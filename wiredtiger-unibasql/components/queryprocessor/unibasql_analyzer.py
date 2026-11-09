@@ -1,6 +1,7 @@
 # NOTE: currently a mcok implementation but normally should check if the syntactically correct query is also
 # semantically correct by checking table schemas etc through the catalog manager
 
+# TODO: need to somewhere add NOT NULL check if col has this constraint!
 
 from .expression import BinOp, ColumnRef, Expr, LiteralExpr, UnOp
 from .unibasql_algebra import (

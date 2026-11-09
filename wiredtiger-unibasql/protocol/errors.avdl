@@ -1,27 +1,27 @@
-schema document.errors.Error;
+schema unibasql.errors.Error;
 
-@namespace("document.errors")
+@namespace("unibasql.errors")
 error Error {
   string error;
   string component = "";
   string kind = "GenericError";
 }
 
-@namespace("document.errors")
+@namespace("unibasql.errors")
 error QueryProcessorError {
   string error;
   string component = "";
   string kind = "QueryProcessorError";
 }
 
-@namespace("document.errors")
-error DocQLSyntaxError {
+@namespace("unibasql.errors")
+error UnibaSQLSyntaxError {
   string error;
   string component = "";
-  string kind = "DocQLSyntaxError";
+  string kind = "UnibaSQLSyntaxError";
 }
 
-@namespace("document.errors")
+@namespace("unibasql.errors")
 error WiredTigerError {
   string error;
   string component = "";

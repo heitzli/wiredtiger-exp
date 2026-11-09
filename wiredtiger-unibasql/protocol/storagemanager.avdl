@@ -1,7 +1,8 @@
-@namespace("document.storagemanager")
+@namespace("unibasql.storagemanager")
 protocol StorageManager {
   import idl "algebranode.avdl";
   import idl "errors.avdl";
+  import idl "ddlnode.avdl";
 
   record ExecuteQueryRequest {
     unibasql.queryprocessor.algebra.AlgebraNode plan;
@@ -19,5 +20,17 @@ protocol StorageManager {
     union {null, map<string>} custom = null;
   }
 
-  ExecuteQueryResponse execute(ExecuteQueryRequest request) throws document.errors.WiredTigerError;
+  record ExecuteDDLRequest {
+    unibasql.queryprocessor.ddl.DDLNode plan;
+    union {null, map<string>} custom = null;
+  }
+
+  record ExecuteDDLResponse {
+    map<WTValue> value;
+    union {null, map<string>} custom = null;
+  }
+
+  ExecuteQueryResponse execute(ExecuteQueryRequest request) throws unibasql.errors.WiredTigerError;
+  ExecuteDDLResponse execute_ddl(ExecuteDDLRequest request) throws unibasql.errors.WiredTigerError;
+
 }

@@ -2,11 +2,10 @@ import uuid
 from abc import ABC, abstractmethod
 
 import wiredtiger
-from wiredtiger import wiredtiger_strerror
 
-from ..errors import WiredTigerError
 from ..queryprocessor import AbstractAlgebraNode, Projection, Selection, TableScan, dict_satisfies
 from .value_utils import decode_value
+from .wt_utils import wt_transaction
 
 
 class ExecNode(ABC):
@@ -21,17 +20,11 @@ class TableScanExecNode(ExecNode):
 
     def execute(self, wt_conn: wiredtiger.Connection):  # type: ignore
         with wt_conn.open_session() as session:
-            with session.open_cursor(f"table:{self.table}") as cursor:
-                if start_tx_err := session.begin_transaction():
-                    raise WiredTigerError(
-                        message=wiredtiger_strerror(start_tx_err),  # type: ignore
-                        source=self.kind,
-                    )
+            with wt_transaction(session, source=self.kind):
+                with session.open_cursor(f"table:{self.table}") as cursor:
+                    current_doc_id: bytes | None = None
+                    dict_doc = {}
 
-                current_doc_id: bytes | None = None
-                dict_doc = {}
-
-                try:
                     while cursor.next() == 0:
                         key, attribute = cursor.get_key()
 
@@ -47,12 +40,6 @@ class TableScanExecNode(ExecNode):
 
                     if dict_doc:
                         yield dict_doc
-
-                    session.commit_transaction()
-
-                except Exception:
-                    session.rollback_transaction()
-                    raise
 
 
 class SelectionExecNode(ExecNode):

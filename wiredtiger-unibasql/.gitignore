@@ -9,7 +9,7 @@ WT_HOME
 
 **.avsc
 **.avpr
-WT_DOC_HOME
+WT_UNIBASQL_HOME
 **.pytest_cache
 
 **logs/

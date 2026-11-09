@@ -1,4 +1,4 @@
-@namespace("document.queryprocessor")
+@namespace("unibasql.queryprocessor")
 protocol Queryprocessor{
 
   import idl "errors.avdl";
@@ -19,6 +19,6 @@ protocol Queryprocessor{
     union {null, map<string>} custom = null;
   }
 
-  EvaluateQueryResponse evaluate(EvaluateQueryRequest request) throws document.errors.QueryProcessorError, document.errors.DocQLSyntaxError, document.errors.WiredTigerError;
+  EvaluateQueryResponse evaluate(EvaluateQueryRequest request) throws unibasql.errors.QueryProcessorError, unibasql.errors.UnibaSQLSyntaxError, unibasql.errors.WiredTigerError;
 
 }
