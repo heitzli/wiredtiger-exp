@@ -62,14 +62,14 @@ class AbstractAlgebraNode(BaseModel, ABC):
             cls._AVRO_NODE_KINDS[kind_field.default] = cls
 
     @abstractmethod
-    def children(self) -> list[AbstractAlgebraNode]: ...
+    def child_nodes(self) -> list[AbstractAlgebraNode]: ...
 
     @abstractmethod
     def label(self) -> str: ...
 
     def print_tree(self, indent=0):
         print("  " * indent + self.label())
-        for child in self.children():
+        for child in self.child_nodes():
             child.print_tree(indent + 1)
 
     def to_avro(self) -> dict[str, Any]:
@@ -102,9 +102,7 @@ class AbstractAlgebraNode(BaseModel, ABC):
             "values": None,
             "columns": None,
             "expr": None,
-            "left": None,
-            "right": None,
-            "child": None,
+            "children": None,
             "assignments": None,
             "custom": self.custom,
         }
@@ -115,16 +113,15 @@ class AbstractAlgebraNode(BaseModel, ABC):
                 datum["values"] = self._values_rows_to_avro(self.values)
             case Projection():
                 datum["columns"] = self._columns_to_avro(self.columns)
-                datum["child"] = self.child._node_to_avro()
+                datum["children"] = [self.child._node_to_avro()]
             case Selection():
                 datum["expr"] = self._expr_to_avro(self.expr)
-                datum["child"] = self.child._node_to_avro()
+                datum["children"] = [self.child._node_to_avro()]
             case TupleUpdate():
                 datum["assignments"] = self._assignments_to_avro(self.assignments)
-                datum["child"] = self.child._node_to_avro()
+                datum["children"] = [self.child._node_to_avro()]
             case Cross() | Union() | Difference():
-                datum["left"] = self.left._node_to_avro()
-                datum["right"] = self.right._node_to_avro()
+                datum["children"] = [self.left._node_to_avro(), self.right._node_to_avro()]
             case AlgebraNode():
                 if self.table is not None:
                     datum["table"] = self._resolved_table_to_avro(self.table)
@@ -134,12 +131,8 @@ class AbstractAlgebraNode(BaseModel, ABC):
                     datum["columns"] = self._columns_to_avro(self.columns)
                 if self.expr is not None:
                     datum["expr"] = self._expr_to_avro(self.expr)
-                if self.left is not None:
-                    datum["left"] = self.left._node_to_avro()
-                if self.right is not None:
-                    datum["right"] = self.right._node_to_avro()
-                if self.child is not None:
-                    datum["child"] = self.child._node_to_avro()
+                if self.children:
+                    datum["children"] = [child._node_to_avro() for child in self.children]
                 if self.assignments is not None:
                     datum["assignments"] = self._assignments_to_avro(self.assignments)
             case _:
@@ -221,24 +214,26 @@ class AbstractAlgebraNode(BaseModel, ABC):
             case "Projection":
                 return Projection(
                     columns=cls._columns_from_avro(datum["columns"]),
-                    child=cls._node_from_avro(datum["child"]),
+                    child=cls._node_from_avro(datum["children"][0]),
                     custom=custom,
                 )
             case "Selection":
                 return Selection(
-                    expr=cls._expr_from_avro(datum["expr"]), child=cls._node_from_avro(datum["child"]), custom=custom
+                    expr=cls._expr_from_avro(datum["expr"]),
+                    child=cls._node_from_avro(datum["children"][0]),
+                    custom=custom,
                 )
             case "TupleUpdate":
                 return TupleUpdate(
                     assignments=cls._assignments_from_avro(datum["assignments"]),
-                    child=cls._node_from_avro(datum["child"]),
+                    child=cls._node_from_avro(datum["children"][0]),
                     custom=custom,
                 )
             case "Cross" | "Union" | "Difference":
                 node_class = cls._AVRO_NODE_KINDS[datum["kind"]]
                 return node_class(
-                    left=cls._node_from_avro(datum["left"]),
-                    right=cls._node_from_avro(datum["right"]),
+                    left=cls._node_from_avro(datum["children"][0]),
+                    right=cls._node_from_avro(datum["children"][1]),
                     custom=custom,
                 )
             case _:
@@ -250,9 +245,8 @@ class AbstractAlgebraNode(BaseModel, ABC):
                     values=cls._values_rows_from_avro(datum["values"]) if datum.get("values") is not None else None,
                     columns=cls._columns_from_avro(datum["columns"]) if datum.get("columns") is not None else None,
                     expr=cls._expr_from_avro(datum["expr"]) if datum.get("expr") is not None else None,
-                    left=cls._node_from_avro(datum["left"]) if datum.get("left") is not None else None,
-                    right=cls._node_from_avro(datum["right"]) if datum.get("right") is not None else None,
-                    child=cls._node_from_avro(datum["child"]) if datum.get("child") is not None else None,
+                    # the field is non-optional; an empty/null wire list decodes to [].
+                    children=[cls._node_from_avro(child) for child in (datum.get("children") or [])],
                     assignments=(
                         cls._assignments_from_avro(datum["assignments"])
                         if datum.get("assignments") is not None
@@ -345,15 +339,11 @@ class AlgebraNode(AbstractAlgebraNode):
     values: list[tuple[ResolvedValue, ...]] | None = None
     columns: tuple[ResolvedColumn, ...] | None = None
     expr: Expr | None = None
-    left: AbstractAlgebraNode | None = None
-    right: AbstractAlgebraNode | None = None
-    child: AbstractAlgebraNode | None = None
+    children: list[AbstractAlgebraNode] = []
     assignments: tuple[tuple[ResolvedColumn, Expr], ...] | None = None
 
-    def children(self) -> list[AbstractAlgebraNode]:
-        # NOTE: concrete nodes use either left/right (two inputs) or child (one input);
-        # the generic node mirrors the wire record and may populate any subset.
-        return [c for c in (self.left, self.right, self.child) if c is not None]
+    def child_nodes(self) -> list[AbstractAlgebraNode]:
+        return self.children
 
     def label(self) -> str:
         return f"{self.kind}"
@@ -363,7 +353,7 @@ class TableScan(AbstractAlgebraNode):
     kind: Literal["TableScan"] = "TableScan"
     table: ResolvedTable
 
-    def children(self) -> list[AbstractAlgebraNode]:
+    def child_nodes(self) -> list[AbstractAlgebraNode]:
         return []
 
     def label(self) -> str:
@@ -376,7 +366,7 @@ class VirtualTableScan(AbstractAlgebraNode):
     kind: Literal["VirtualTableScan"] = "VirtualTableScan"
     values: list[tuple[ResolvedValue, ...]]
 
-    def children(self) -> list[AbstractAlgebraNode]:
+    def child_nodes(self) -> list[AbstractAlgebraNode]:
         return []
 
     def label(self) -> str:
@@ -388,7 +378,7 @@ class Projection(AbstractAlgebraNode):
     columns: tuple[ResolvedColumn, ...]  # NOTE: star is expanded to all columns present in table
     child: AbstractAlgebraNode
 
-    def children(self) -> list[AbstractAlgebraNode]:
+    def child_nodes(self) -> list[AbstractAlgebraNode]:
         return [self.child]
 
     def label(self) -> str:
@@ -401,7 +391,7 @@ class Selection(AbstractAlgebraNode):
     expr: Expr
     child: AbstractAlgebraNode
 
-    def children(self) -> list[AbstractAlgebraNode]:
+    def child_nodes(self) -> list[AbstractAlgebraNode]:
         return [self.child]
 
     def label(self) -> str:
@@ -413,7 +403,7 @@ class Cross(AbstractAlgebraNode):
     left: AbstractAlgebraNode
     right: AbstractAlgebraNode
 
-    def children(self) -> list[AbstractAlgebraNode]:
+    def child_nodes(self) -> list[AbstractAlgebraNode]:
         return [self.left, self.right]
 
     def label(self) -> str:
@@ -425,7 +415,7 @@ class Union(AbstractAlgebraNode):
     left: AbstractAlgebraNode
     right: AbstractAlgebraNode
 
-    def children(self) -> list[AbstractAlgebraNode]:
+    def child_nodes(self) -> list[AbstractAlgebraNode]:
         return [self.left, self.right]
 
     def label(self) -> str:
@@ -437,7 +427,7 @@ class Difference(AbstractAlgebraNode):
     left: AbstractAlgebraNode
     right: AbstractAlgebraNode
 
-    def children(self) -> list[AbstractAlgebraNode]:
+    def child_nodes(self) -> list[AbstractAlgebraNode]:
         return [self.left, self.right]
 
     def label(self) -> str:
@@ -458,7 +448,7 @@ class TupleUpdate(AbstractAlgebraNode):
     assignments: tuple[tuple[ResolvedColumn, Expr], ...]
     child: AbstractAlgebraNode
 
-    def children(self) -> list[AbstractAlgebraNode]:
+    def child_nodes(self) -> list[AbstractAlgebraNode]:
         return [self.child]
 
     def label(self) -> str:

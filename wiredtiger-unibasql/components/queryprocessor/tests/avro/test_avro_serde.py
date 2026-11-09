@@ -178,9 +178,7 @@ def test_to_avro_table_scan_datum_shape() -> None:
         "values": None,
         "columns": None,
         "expr": None,
-        "left": None,
-        "right": None,
-        "child": None,
+        "children": None,
         "assignments": None,
         "custom": None,
     }
@@ -223,17 +221,15 @@ def test_to_avro_values_are_resolved_value_rows() -> None:
 
 
 def test_generic_algebra_node_round_trips() -> None:
-    # The generic node mirrors the wire record 1:1 (incl. child); every populated field
-    # round-trips through binary avro.
+    # The generic node mirrors the wire record 1:1 (incl. children); every populated
+    # field round-trips through binary avro.
     node = AlgebraNode(
         kind="FutureThing",
         table=employees_table(),
         values=[(rv(27, DataType.INT),), (rv(None, DataType.STRING),)],
         columns=employees_schema("employees"),
         expr=where_expr(),
-        left=scan(),
-        right=scan_aliased(),
-        child=selection(),
+        children=[scan(), scan_aliased(), selection()],
         assignments=((rc("name", DataType.STRING), LiteralExpr(type="string", value="x")),),
         custom={"source": "future"},
     )
@@ -249,7 +245,7 @@ def test_minimal_generic_algebra_node_round_trips() -> None:
 def test_generic_node_with_registered_kind_decodes_to_concrete() -> None:
     # Encoding a generic node with a registered kind produces the same wire datum a
     # concrete node would; the reader reconstructs the concrete class.
-    node = AlgebraNode(kind="Union", left=scan(), right=scan_aliased(), custom={"source": "delete"})
+    node = AlgebraNode(kind="Union", children=[scan(), scan_aliased()], custom={"source": "delete"})
     round_tripped = AbstractAlgebraNode.from_avro_bytes(node.to_avro_bytes())
     assert round_tripped == Union(left=scan(), right=scan_aliased(), custom={"source": "delete"})
 
@@ -262,7 +258,7 @@ def test_unknown_kind_decodes_to_generic_algebra_node() -> None:
     assert isinstance(round_tripped, AlgebraNode)
     assert round_tripped.kind == "FutureNode"
     assert round_tripped.columns == projection().columns
-    assert round_tripped.child == projection().child
+    assert round_tripped.children == [projection().child]
 
 
 def test_concrete_node_kinds_are_registered() -> None:

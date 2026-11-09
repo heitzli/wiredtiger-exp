@@ -7,9 +7,8 @@ record AlgebraNode {
   union{null, array<array<ResolvedValue>>} values = null;
   union{null, array<ResolvedColumn>} columns = null;
   Expr? expr = null;
-  AlgebraNode? left = null;
-  AlgebraNode? right = null;
-  AlgebraNode? child = null;
+  // left = children[0], right = children[1], if len == 1 then child = children[0]
+  union{null, array<AlgebraNode>} children = null;
   union{null, array<Assignment>} assignments = null;
   union {null, map<string>} custom = null;
 }
