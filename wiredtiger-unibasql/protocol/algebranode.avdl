@@ -18,7 +18,8 @@ enum DataType {
   STRING,
   BOOL,
   INT,
-  DOUBLE
+  DOUBLE,
+  NULL
 }
 
 @namespace("unibasql.queryprocessor.algebra")

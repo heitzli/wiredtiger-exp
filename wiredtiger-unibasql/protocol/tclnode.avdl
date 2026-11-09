@@ -17,6 +17,6 @@ record TCLNode {
   TxResult? tx_result = null;
   TCLNode? tx_start = null;
   TCLNode? tx_end = null;
-  union{null, array<union{unibasql.queryprocessor.algebra.AlgebraNode, unibasql.queryprocessor.algebra.DDLNode, TCLNode}>} statements = null;
+  union{null, array<union{unibasql.queryprocessor.algebra.AlgebraNode, unibasql.queryprocessor.ddl.DDLNode, TCLNode}>} statements = null;
   union {null, map<string>} custom = null;
 }

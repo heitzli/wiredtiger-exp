@@ -8,6 +8,7 @@ from components.queryprocessor.expression import BinOp
 from components.queryprocessor.unibasql_parser import parse_unibasql
 from components.queryprocessor.unibasql_unresolved import (
     AllowedValue,
+    DataType,
     UnresolvedColumn,
     UnresolvedDML,
     UnresolvedDQL,
@@ -42,8 +43,8 @@ def parse_insert_value(sql: str) -> UnresolvedLiteralExpr:
         ("true", True, "bool"),
         ("FALSE", False, "bool"),
         ("false", False, "bool"),
-        ("NULL", None, "null"),
-        ("null", None, "null"),
+        ("NULL", None, DataType.NULL),
+        ("null", None, DataType.NULL),
     ],
 )
 def test_insert_literals(raw: str, value: AllowedValue, value_type: str) -> None:
@@ -63,7 +64,7 @@ def test_insert_value_row_with_every_literal_kind() -> None:
             UnresolvedLiteralExpr(value="x", type="string"),
             UnresolvedLiteralExpr(value=True, type="bool"),
             UnresolvedLiteralExpr(value=False, type="bool"),
-            UnresolvedLiteralExpr(value=None, type="null"),
+            UnresolvedLiteralExpr(value=None, type=DataType.NULL),
         ]
     ]
 

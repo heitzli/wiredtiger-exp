@@ -164,7 +164,7 @@ class AbstractTCLNode(BaseModel, ABC):
                 match branch.fullname:
                     case "unibasql.queryprocessor.algebra.AlgebraNode":
                         return AbstractAlgebraNode.from_avro(wire)
-                    case "unibasql.queryprocessor.algebra.DDLNode":
+                    case "unibasql.queryprocessor.ddl.DDLNode":
                         return AbstractDDLNode.from_avro(wire)
                     case "unibasql.queryprocessor.tcl.TCLNode":
                         return cls._tcl_node_from_avro(wire)

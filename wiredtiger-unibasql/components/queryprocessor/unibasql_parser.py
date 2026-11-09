@@ -316,7 +316,7 @@ class UnibaSQLSyntaxExtractor(UnibaSQLVisitor):
         if ctx.FALSE():
             return UnresolvedLiteralExpr(value=False, type="bool")
 
-        return UnresolvedLiteralExpr(value=None, type="null")
+        return UnresolvedLiteralExpr(value=None, type=DataType.NULL)
 
     # ---
 

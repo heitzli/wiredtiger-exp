@@ -182,7 +182,7 @@ def test_insert_null_literal_takes_target_column_type() -> None:
         op=DMLOp.INSERT,
         table=UnresolvedTable(name="employees"),
         columns=[ucol("id")],
-        values=[[ulit(None, "null")]],
+        values=[[ulit(None, DataType.NULL)]],
     )
     expected = Union(
         left=TableScan(table=employees_table()),
@@ -206,7 +206,7 @@ def test_insert_null_in_full_row_takes_target_column_type() -> None:
     query = UnresolvedDML(
         op=DMLOp.INSERT,
         table=UnresolvedTable(name="employees"),
-        values=[[ulit(1, "int"), ulit(None, "null"), ulit(2.5, "double"), ulit(True, "bool"), ulit(3, "int")]],
+        values=[[ulit(1, "int"), ulit(None, DataType.NULL), ulit(2.5, "double"), ulit(True, "bool"), ulit(3, "int")]],
     )
     expected = Union(
         left=TableScan(table=employees_table()),

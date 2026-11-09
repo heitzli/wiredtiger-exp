@@ -257,7 +257,7 @@ class QueryAnalyzer:
                 index = column_indices[column.name]
 
                 padded_row[index] = ResolvedValue(
-                    type=column.type if value.type == "null" else DataType(value.type),
+                    type=column.type if value.type is DataType.NULL else value.type,
                     value=value.value,
                 )
 
