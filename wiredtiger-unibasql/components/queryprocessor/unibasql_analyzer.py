@@ -54,8 +54,10 @@ MOCK_CATALOG = {
 
 
 class QueryAnalyzer:
-    def __init__(self, mock_catalog: dict = MOCK_CATALOG) -> None:
+    def __init__(self, mock_catalog: dict = MOCK_CATALOG, bypass_catalog: bool = False) -> None:
         self.mock_catalog = mock_catalog
+        # bypass_catalog as a constructor flag for debugging
+        self.bypass_catalog = bypass_catalog
 
     def analyze_query(
         self, unresolved_query: UnresolvedQuery | AbstractStatement
@@ -143,7 +145,7 @@ class QueryAnalyzer:
         if isinstance(unresolved_query, UnresolvedTableDDL):
             match unresolved_query.op:
                 case DDLOp.CREATE:
-                    if unresolved_query.table.name in self.mock_catalog.keys():
+                    if not self.bypass_catalog and unresolved_query.table.name in self.mock_catalog.keys():
                         raise ValueError(f"Table {unresolved_query.table.name} already exists")
 
                     resolved_columns = []
@@ -173,7 +175,7 @@ class QueryAnalyzer:
             match unresolved_query.op:
                 case DDLOp.CREATE:
                     existing_info = self.mock_catalog.get(unresolved_query.idx_name)
-                    if existing_info is not None:
+                    if existing_info is not None and not self.bypass_catalog:
                         if existing_info:
                             raise ValueError(
                                 f"Index name {unresolved_query.idx_name} collides with table {unresolved_query.idx_name}"
@@ -193,7 +195,7 @@ class QueryAnalyzer:
 
                 case DDLOp.DROP:
                     resolved_table = self._resolve_table([unresolved_query.table])
-                    if unresolved_query.idx_name not in self.mock_catalog.keys():
+                    if not self.bypass_catalog and unresolved_query.idx_name not in self.mock_catalog.keys():
                         raise ValueError(f"Index {unresolved_query.idx_name} does not exist")
 
                     return IndexDDL(op=DDLOp.DROP, table=resolved_table[0], idx_name=unresolved_query.idx_name)
@@ -352,7 +354,17 @@ class QueryAnalyzer:
             ]
 
             if not candidates:
-                raise ValueError(f"Column {uc.qualifier + '.' if uc.qualifier else ''}{uc.name} does not exist")
+                if not self.bypass_catalog:
+                    raise ValueError(f"Column {uc.qualifier + '.' if uc.qualifier else ''}{uc.name} does not exist")
+                fallback_table = resolved_tables[-1] if resolved_tables else None
+                projection.append(
+                    ResolvedColumn(
+                        name=uc.name,
+                        qualifier=uc.qualifier if uc.qualifier is not None else fallback_table.qualifier,
+                        type=DataType.NULL,
+                    )
+                )
+                continue
 
             if len(candidates) > 1:
                 raise ValueError(f"Column {uc.name} is ambiguous")
@@ -372,10 +384,10 @@ class QueryAnalyzer:
     def _get_schema(self, table_name: str, alias: str | None = None) -> tuple[ResolvedColumn, ...]:
         schema: list[ResolvedColumn] = []
         table_info = self.mock_catalog.get(table_name)
-        if not table_info:
+        if not table_info and not self.bypass_catalog:
             raise ValueError(f"Table {table_name} does not exist")
         qualifier = alias or table_name
-        for k, v in table_info.items():
+        for k, v in (table_info or {}).items():
             schema.append(ResolvedColumn(name=k, type=v, qualifier=qualifier))
 
         return tuple(schema)
@@ -383,7 +395,7 @@ class QueryAnalyzer:
     def _resolve_table(self, tables: list[UnresolvedTable]) -> list[ResolvedTable]:
         resolved_tables: list[ResolvedTable] = []
         for table in tables:
-            if table.name not in self.mock_catalog.keys():
+            if table.name not in self.mock_catalog.keys() and not self.bypass_catalog:
                 raise ValueError(f"Table {table.name} does not exist")
             table_schema = self._get_schema(table_name=table.name, alias=table.alias)
             resolved_tables.append(ResolvedTable(name=table.name, alias=table.alias, table_schema=table_schema))

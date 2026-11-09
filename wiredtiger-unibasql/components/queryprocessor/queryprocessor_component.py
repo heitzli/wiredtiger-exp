@@ -30,7 +30,7 @@ class QueryProcessorResponder(avro.ipc.Responder):
         try:
             # NOTE assume single queries for the moment
             parsed_query = parse_unibasql(query)[0]
-            analyzed_query = QueryAnalyzer().analyze_query(parsed_query)
+            analyzed_query = QueryAnalyzer(bypass_catalog=self.qp.bypass_catalog).analyze_query(parsed_query)
             match analyzed_query:
                 case AbstractDDLNode():
                     res = self.qp.call_remote(
@@ -64,7 +64,10 @@ class QueryProcessor(Component):
         protocol_path: Path,
         broker_socket: str,
         component_socket: str,
+        bypass_catalog: bool = False,
     ) -> None:
+        # FIX: bypass_catalog debug switch, handed to the analyzer (catalog-enforcing behavior unchanged when False).
+        self.bypass_catalog = bypass_catalog
         super().__init__(name, broker_protocol_path, protocol_path, broker_socket, component_socket)
 
     def _create_responder(self, protocol: Protocol) -> avro.ipc.Responder:

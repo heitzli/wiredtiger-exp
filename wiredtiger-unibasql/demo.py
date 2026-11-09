@@ -12,7 +12,7 @@ if __name__ == "__main__":
     )
 
     print(client._query(query="CREATE TABLE test (id INT PRIMARY KEY, name STRING, salary DOUBLE, active BOOL);"))
-    # NOTE requires working catalog to pass through analyzer maybe add a debug mode in analyzer that does not perform checking against catalog?
-    # print(client._query(query="CREATE INDEX test_idx ON test (id, salary);"))
-    # print(client._query(query="DROP INDEX test_idx ON test;"))
-    # print(client._query(query="DROP TABLE test"))
+    # NOTE works with QueryAnalyzer(bypass_catalog=True)
+    print(client._query(query="CREATE INDEX test_idx ON test (id, salary);"))
+    print(client._query(query="DROP INDEX test_idx ON test;"))
+    print(client._query(query="DROP TABLE test;"))
