@@ -17,7 +17,8 @@ for idl in ./*.avdl; do
 
     # Choose the output format for each file.
     case "$base" in
-        algebranode|errors|ddlnode)
+        # FIX: tclnode added; the TCL wire record is a plain data record (like algebranode/ddlnode), not a protocol message, so it compiles to avsc.
+        algebranode|errors|ddlnode|tclnode)
             format="avsc"
             ;;
         broker|client|message|queryprocessor|storagemanager)

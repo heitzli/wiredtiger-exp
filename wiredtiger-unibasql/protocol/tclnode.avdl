@@ -1,0 +1,22 @@
+schema unibasql.queryprocessor.tcl.TCLNode;
+
+import idl "algebranode.avdl";
+import idl "ddlnode.avdl";
+
+
+@namespace("unibasql.queryprocessor.tcl")
+enum TxResult {
+  COMMIT,
+  ROLLBACK
+}
+
+@namespace("unibasql.queryprocessor.tcl")
+record TCLNode {
+  string kind;
+  string? tx_id = null;
+  TxResult? tx_result = null;
+  TCLNode? tx_start = null;
+  TCLNode? tx_end = null;
+  union{null, array<union{unibasql.queryprocessor.algebra.AlgebraNode, unibasql.queryprocessor.algebra.DDLNode, TCLNode}>} statements = null;
+  union {null, map<string>} custom = null;
+}
