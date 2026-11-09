@@ -1,7 +1,6 @@
 import json
 import os
 import shutil
-from asyncio import ReadTransport
 from pathlib import Path
 
 import wiredtiger
@@ -52,10 +51,13 @@ class StorageManagerResponder(Responder):
                     return self._handle_drop_table(node=py_node)
 
             case "IndexDDL":
-                if isinstance(node, IndexDDL):
-                    if node.op == DDLOp.CREATE:
-                        return self._handle_create_index(node=node)
-                    return self._handle_drop_index(node=node)
+                py_node = IndexDDL.from_avro(node)
+                if isinstance(py_node, IndexDDL):
+                    if py_node.op == DDLOp.CREATE:
+                        return self._handle_create_index(node=py_node)
+                    return self._handle_drop_index(node=py_node)
+
+        raise ValueError(f"Unhandled DDL kind: {kind}")
 
     def _handle_create_index(self, node: IndexDDL):
         table_name = node.table.name
