@@ -17,7 +17,7 @@ for idl in ./*.avdl; do
 
     # Choose the output format for each file.
     case "$base" in
-        algebranode|errors)
+        algebranode|errors|ddlnode)
             format="avsc"
             ;;
         broker|client|message|queryprocessor|storagemanager)

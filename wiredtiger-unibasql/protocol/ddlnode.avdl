@@ -1,0 +1,19 @@
+schema unibasql.queryprocessor.algebra.DDLNode;
+
+import idl "algebranode.avdl";
+
+@namespace("unibasql.queryprocessor.algebra")
+enum DDLOp {
+  CREATE,
+  DROP
+}
+
+@namespace("unibasql.queryprocessor.algebra")
+record DDLNode {
+  string kind;
+  ResolvedTable? table = null;
+  DDLOp? op = null;
+  string? idx_name = null;
+  union{null, array<ResolvedColumn>} columns = null;
+  union {null, map<string>} custom = null;
+}
