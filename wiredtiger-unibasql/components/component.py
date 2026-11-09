@@ -216,7 +216,13 @@ class Component(ABC):
         message = self.create_message(datum=params, request_name=rpc_name, destination=destination)
         self.log.info(
             "send",
-            extra={"peer": destination, "rpc": rpc_name, "correlation_id": message.correlation_id, "content": params},
+            extra={
+                "peer": destination,
+                "rpc": rpc_name,
+                "correlation_id": message.correlation_id,
+                "sequence_id": message.sequence_id,
+                "content": params,
+            },
         )
         if destination == self.name:
             # Bypass the broker: enqueue from other threads, dispatch inline
@@ -366,6 +372,7 @@ class Component(ABC):
                 "peer": message.source,
                 "rpc": method,
                 "correlation_id": message.correlation_id,
+                "sequence_id": message.sequence_id,
                 "content": request_datum,
             },
         )

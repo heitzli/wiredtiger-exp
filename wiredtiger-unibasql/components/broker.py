@@ -50,7 +50,12 @@ class BrokerResponder(avro.ipc.Responder):
         message = message_from_dict(request["message"])
         log.info(
             "route",
-            extra={"peer": message.destination, "correlation_id": message.correlation_id, "content": message.payload},
+            extra={
+                "peer": message.destination,
+                "correlation_id": message.correlation_id,
+                "sequence_id": message.sequence_id,
+                "content": message.payload,
+            },
         )
         reply = self._broker.forward(message)
         return message_to_dict(reply)
@@ -113,7 +118,12 @@ class Broker:
             raise RuntimeError(f"Correlation mismatch: sent {message.correlation_id}, got {reply.correlation_id}")
         log.info(
             "reply",
-            extra={"peer": reply.destination, "correlation_id": reply.correlation_id, "content": reply.payload},
+            extra={
+                "peer": reply.destination,
+                "correlation_id": reply.correlation_id,
+                "sequence_id": reply.sequence_id,
+                "content": reply.payload,
+            },
         )
         return reply
 

@@ -7,7 +7,7 @@ from datetime import datetime
 from logging.handlers import QueueHandler, QueueListener
 from queue import Queue
 
-_FIELDS = ("peer", "rpc", "correlation_id", "content")
+_FIELDS = ("peer", "rpc", "correlation_id", "sequence_id", "content")
 
 LOG_COLLECTOR_PORT = 64242
 LOG_COLLECTOR_HOSTPORT = f"127.0.0.1:{LOG_COLLECTOR_PORT}"
