@@ -78,6 +78,7 @@ class Component(ABC):
         # Worker-thread-confined: only the worker thread calls responder.invoke, so responders need no internal locking for handler state.
         self.responder = self._create_responder(self.protocol)
         self._correlation_ids = itertools.count(1)
+        self._sequence_ids = itertools.count(1)
         # Serializes transceive (write-frame + blocking-read-frame) on the single shared broker_connection; without it concurrent call_remote() calls can read each other's responses.
         self._broker_lock = threading.Lock()
         self._inbox: queue.Queue[_QueuedRequest | None] = queue.Queue()
@@ -105,6 +106,10 @@ class Component(ABC):
     def next_correlation_id(self) -> int:
         """Create correlation ids to match messages, currently not strictly necessary but might be helpful in the future."""
         return next(self._correlation_ids)
+
+    def next_sequence_id(self) -> int:
+        """Sequence id of this component's outbound messages (tcp-like: monotonically increasing per sender)."""
+        return next(self._sequence_ids)
 
     def register(self) -> Any:
         """Register the component to the broker. Maybe add more metadata in the future depending on the role of the broker."""
@@ -179,6 +184,7 @@ class Component(ABC):
             source=self.name,
             destination=destination,
             correlation_id=self.next_correlation_id(),
+            sequence_id=self.next_sequence_id(),
             payload=payload,
         )
 
@@ -376,6 +382,8 @@ class Component(ABC):
             source=self.name,
             destination=message.source,
             correlation_id=message.correlation_id,
+            # NOTE: replies are messages sent BY this component, so they get their own sequence id; correlation_id links the pair.
+            sequence_id=self.next_sequence_id(),
             payload=payload,
         )
         return encode_message(reply)

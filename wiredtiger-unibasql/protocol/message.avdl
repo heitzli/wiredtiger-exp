@@ -1,10 +1,11 @@
 namespace message;
 
 schema Message;
-// todo add sequence id
+
 record Message {
   string source;
   string destination;
-  int correlation_id;
+  int correlationID;
+  int sequenceID;
   bytes payload;
 }

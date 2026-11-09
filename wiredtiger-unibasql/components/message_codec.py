@@ -25,7 +25,8 @@ MESSAGE_SCHEMA = avro.schema.parse(
             "fields": [
                 {"name": "source", "type": "string"},
                 {"name": "destination", "type": "string"},
-                {"name": "correlation_id", "type": "int"},
+                {"name": "correlationID", "type": "int"},
+                {"name": "sequenceID", "type": "int"},
                 {"name": "payload", "type": "bytes"},
             ],
         }
@@ -53,6 +54,8 @@ class Message:
     source: str
     destination: str
     correlation_id: int
+    # NOTE: avro spelling is camelCase sequenceID/correlationID; the python fields are snake_case.
+    sequence_id: int
     payload: bytes
 
 
@@ -77,7 +80,8 @@ def encode_message_avro(message: Message) -> bytes:
         {
             "source": message.source,
             "destination": message.destination,
-            "correlation_id": message.correlation_id,
+            "correlationID": message.correlation_id,
+            "sequenceID": message.sequence_id,
             "payload": message.payload,
         },
     )
@@ -89,7 +93,8 @@ def decode_message_avro(raw: bytes) -> Message:
     return Message(
         source=datum["source"],
         destination=datum["destination"],
-        correlation_id=datum["correlation_id"],
+        correlation_id=datum["correlationID"],
+        sequence_id=datum["sequenceID"],
         payload=datum["payload"],
     )
 
@@ -100,7 +105,8 @@ def encode_message_json(message: Message) -> bytes:
         {
             "source": message.source,
             "destination": message.destination,
-            "correlation_id": message.correlation_id,
+            "correlationID": message.correlation_id,
+            "sequenceID": message.sequence_id,
             "payload": base64.b64encode(message.payload).decode("ascii"),
         }
     ).encode("utf-8")
@@ -112,7 +118,8 @@ def decode_message_json(raw: bytes) -> Message:
     return Message(
         source=datum["source"],
         destination=datum["destination"],
-        correlation_id=datum["correlation_id"],
+        correlation_id=datum["correlationID"],
+        sequence_id=datum["sequenceID"],
         payload=base64.b64decode(datum["payload"]),
     )
 
@@ -180,7 +187,8 @@ def message_to_dict(message: Message) -> dict[str, Any]:
     return {
         "source": message.source,
         "destination": message.destination,
-        "correlation_id": message.correlation_id,
+        "correlationID": message.correlation_id,
+        "sequenceID": message.sequence_id,
         "payload": message.payload,
     }
 
@@ -190,6 +198,7 @@ def message_from_dict(datum: dict[str, Any]) -> Message:
     return Message(
         source=datum["source"],
         destination=datum["destination"],
-        correlation_id=datum["correlation_id"],
+        correlation_id=datum["correlationID"],
+        sequence_id=datum["sequenceID"],
         payload=datum["payload"],
     )
