@@ -5,11 +5,11 @@ from avro.protocol import Protocol
 
 from components.queryprocessor.unibasql_algebra import AbstractAlgebraNode
 from components.queryprocessor.unibasql_ddl_nodes import AbstractDDLNode
-from components.queryprocessor.unibasql_tcl_nodes import AbstractTCLNode
+from components.queryprocessor.unibasql_tcl_nodes import AbstractTCLNode, TxEndNode, TxStartNode
 
 from ..component import Component
 from ..errors import ComponentError, QueryProcessorError
-from .unibasql_analyzer import QueryAnalyzer
+from .unibasql_analyzer import CatalogRpcClient, QueryAnalyzer
 from .unibasql_parser import parse_unibasql
 
 
@@ -33,7 +33,10 @@ class QueryProcessorResponder(avro.ipc.Responder):
             parsed_query = parse_unibasql(query)
             if isinstance(parsed_query, list):
                 parsed_query = parse_unibasql(query)[0]
-            analyzed_query = QueryAnalyzer(bypass_catalog=self.qp.bypass_catalog).analyze_query(parsed_query)
+            analyzed_query = QueryAnalyzer(
+                bypass_catalog=self.qp.bypass_catalog,
+                catalog_client=CatalogRpcClient(component=self.qp),
+            ).analyze_query(parsed_query)
             result: dict = {}
             res: dict = {}
             match analyzed_query:
@@ -51,9 +54,20 @@ class QueryProcessorResponder(avro.ipc.Responder):
                         params={"request": {"plan": analyzed_query.to_avro(), "custom": custom}},
                     )
                     # TODO send to query executor
-                    print(res)
+                    # TODO impl streaming
+                    return {"value": {"todo": "TODO impl call to engine"}}
                 case AbstractTCLNode():
                     # TODO handle if full TX
+
+                    if isinstance(analyzed_query, TxStartNode):
+                        self.qp.call_remote(
+                            destination="catalog", rpc_name="create_snapshot", params={"tx_id": analyzed_query.tx_id}
+                        )
+                    if isinstance(analyzed_query, TxEndNode):
+                        if tx_id := (custom or {}).get("tx_id"):
+                            self.qp.call_remote(
+                                destination="catalog", rpc_name="release_snapshot", params={"tx_id": tx_id}
+                            )
                     res = self.qp.call_remote(
                         destination="storagemanager",
                         rpc_name="execute_tcl",

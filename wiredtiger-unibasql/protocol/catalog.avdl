@@ -1,0 +1,16 @@
+//TODO rethink if that many messages are necessary for catalog protocol
+
+@namespace("unibasql.catalog")
+protocol catalog {
+  import idl "errors.avdl";
+
+  map<map<string>> get(string table, string key) throws unibasql.errors.CatalogError;
+  map<string> set(string table, string key, map<map<string>> value) throws unibasql.errors.CatalogError;
+  boolean exists(string name) throws unibasql.errors.CatalogError;
+  map<map<map<string>>> entries(string name) throws unibasql.errors.CatalogError;
+  map<string> delete(string name) throws unibasql.errors.CatalogError;
+
+  map<string> create_snapshot(string tx_id) throws unibasql.errors.CatalogError;
+  map<map<map<string>>> snapshot_entries(string tx_id, string name) throws unibasql.errors.CatalogError;
+  map<string> release_snapshot(string tx_id) throws unibasql.errors.CatalogError;
+}

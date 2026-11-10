@@ -11,6 +11,7 @@ from wiredtiger import Session, wiredtiger_open
 from components.queryprocessor.unibasql_tcl_nodes import TxEndNode, TxStartNode
 
 from ..component import Component
+from ..errors import WiredTigerError
 from ..queryprocessor.unibasql_ddl_nodes import IndexDDL, TableDDL
 from ..queryprocessor.unibasql_unresolved import ColumnConstraint, DataType, DDLOp, TxResult
 from .wt_utils import check, wt_transaction
@@ -103,6 +104,50 @@ class StorageManagerResponder(Responder):
             return {"value": {}}
         raise ValueError(f"No transaction with ID {tx_id}")
 
+    # --- catalog synchronization -----------------------------------------------------------------------
+
+    def _catalog_set(self, name: str, key: str, value: dict[str, dict[str, str]]) -> None:
+        try:
+            self.storage_manager.call_remote(
+                destination="catalog", rpc_name="set", params={"table": name, "key": key, "value": value}
+            )
+        except Exception as e:
+            raise WiredTigerError(f"Failed to update catalog entry {name}.{key}: {e}") from e
+
+    def _catalog_delete(self, name: str) -> None:
+        try:
+            self.storage_manager.call_remote(destination="catalog", rpc_name="delete", params={"name": name})
+        except Exception as e:
+            raise WiredTigerError(f"Failed to delete catalog entry {name}: {e}") from e
+
+    def _sync_catalog_create_table(self, node: TableDDL) -> None:
+        # NOTE the WHOLE schema goes into one entry: catalog[table]["schema"] = {col: {props}};
+        # "position" preserves the SQL definition order because the avro map return does not
+        # guarantee ordering (WT's physical PK-first order is a separate concern, see the reorder
+        # NOTE in _handle_create_table).
+        self._catalog_set(
+            name=node.table.name,
+            key="schema",
+            value={
+                col.name: {
+                    "type": str(col.type),
+                    "constraint": str(col.constraint) if col.constraint else "",
+                    "position": str(pos),
+                }
+                for pos, col in enumerate(node.table.table_schema)
+            },
+        )
+
+    def _sync_catalog_create_index(self, node: IndexDDL) -> None:
+        idx_cols = ",".join(c.name for c in node.columns) if node.columns else ""
+        # NOTE the bucket carries its meta under the reserved "index" key; the presence of that key
+        # is what tells an index bucket apart from a table bucket in the analyzer's checks.
+        self._catalog_set(
+            name=node.idx_name,
+            key="index",
+            value={"meta": {"kind": "index", "table": node.table.name, "columns": idx_cols}},
+        )
+
     def _handle_create_index(self, node: IndexDDL, tx_id: str | None = None):
         # NOTE session.create() is not transactional!
         table_name = node.table.name
@@ -114,6 +159,8 @@ class StorageManagerResponder(Responder):
         if tx_id:
             if tx_session := self.transactions.get(tx_id):
                 check(tx_session.create(f"index:{table_name}:{idx_name}", f"columns=({idx_cols_str}),exclusive=true"))
+                # NOTE catalog is updated even on the in-txn path (session.create is not transactional anyway)
+                self._sync_catalog_create_index(node=node)
                 return {"value": {}}
 
         # NOTE fallback is a single tx, maybe should add error logging here or something similar
@@ -121,6 +168,7 @@ class StorageManagerResponder(Responder):
             with wt_transaction(session=session):
                 check(session.create(f"index:{table_name}:{idx_name}", f"columns=({idx_cols_str})"))
 
+        self._sync_catalog_create_index(node=node)
         return {"value": {}}
 
     def _handle_drop_index(self, node: IndexDDL, tx_id: str | None = None):
@@ -128,11 +176,13 @@ class StorageManagerResponder(Responder):
             if tx_session := self.transactions.get(tx_id):
                 check(tx_session.checkpoint())
                 check(tx_session.drop(f"index:{node.table.name}:{node.idx_name}", "remove_files=true"))
+                self._catalog_delete(name=node.idx_name)
                 return {"value": {}}
         with self.storage_manager.connection.open_session() as session:
             check(session.checkpoint())
             with wt_transaction(session):
                 check(session.drop(f"index:{node.table.name}:{node.idx_name}", "remove_files=true"))
+            self._catalog_delete(name=node.idx_name)
             return {"value": {}}
 
     def _handle_drop_table(self, node: TableDDL, tx_id: str | None = None):
@@ -140,11 +190,17 @@ class StorageManagerResponder(Responder):
             if tx_session := self.transactions.get(tx_id):
                 check(tx_session.checkpoint())
                 check(tx_session.drop(f"table:{node.table.name}", "remove_files=true"))
+                # NOTE only the table bucket is removed; index meta buckets referencing this table
+                # become stale here (accepted in debug mode for now).
+                self._catalog_delete(name=node.table.name)
                 return {"value": {}}
         with self.storage_manager.connection.open_session() as session:
             check(session.checkpoint())
             with wt_transaction(session):
                 check(session.drop(f"table:{node.table.name}", "remove_files=true"))
+                # NOTE only the table bucket is removed; index meta buckets referencing this table
+                # become stale here (accepted in debug mode for now).
+                self._catalog_delete(name=node.table.name)
                 return {"value": {}}
 
     def _handle_create_table(self, node: TableDDL, tx_id: str | None = None):
@@ -174,11 +230,13 @@ class StorageManagerResponder(Responder):
         if tx_id:
             if tx_session := self.transactions.get(tx_id):
                 check(tx_session.create(f"table:{node.table.name}", json.dumps(config)))
+                self._sync_catalog_create_table(node=node)
                 return {"value": {}}
         # NOTE primary key is implicitly indexed by WT
         with self.storage_manager.connection.open_session() as session:
             with wt_transaction(session):
                 check(session.create(f"table:{node.table.name}", json.dumps(config)))
+            self._sync_catalog_create_table(node=node)
             return {"value": {}}
 
     # ---

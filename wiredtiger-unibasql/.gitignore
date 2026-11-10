@@ -6,7 +6,7 @@ WT_HOME
 **.antlr
 **/generated/**
 !**/generated/.gitkeep
-
+**dump.json
 **.avsc
 **.avpr
 WT_UNIBASQL_HOME

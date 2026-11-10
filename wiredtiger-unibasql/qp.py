@@ -8,7 +8,7 @@ qp = QueryProcessor(
     protocol_path=Path("protocol/queryprocessor.avpr").absolute(),
     broker_socket="/tmp/broker.sock",
     component_socket="/tmp/queryprocessor.sock",
-    bypass_catalog=True,
+    bypass_catalog=False,
 )
 
 

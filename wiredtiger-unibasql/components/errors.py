@@ -56,8 +56,14 @@ class RemoteError(ComponentError):
     type_name = "RemoteError"
 
 
+class CatalogError(ComponentError):
+    """Raised by the catalog component (missing/duplicate table, bad entry)."""
+
+    type_name = "CatalogError"
+
+
 ERROR_REGISTRY: dict[str, type[ComponentError]] = {
-    cls.type_name: cls for cls in (WiredTigerError, QueryProcessorError, UnibaSQLSyntaxError)
+    cls.type_name: cls for cls in (WiredTigerError, QueryProcessorError, UnibaSQLSyntaxError, CatalogError)
 }
 
 

@@ -20,7 +20,7 @@ for idl in ./*.avdl; do
         algebranode|errors|ddlnode|tclnode)
             format="avsc"
             ;;
-        broker|client|message|queryprocessor|storagemanager|queryoptimizer)
+        broker|client|message|queryprocessor|storagemanager|queryoptimizer|catalog)
             format="avpr"
             ;;
         *)

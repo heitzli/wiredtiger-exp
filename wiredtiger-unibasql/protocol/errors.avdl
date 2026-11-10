@@ -27,3 +27,10 @@ error WiredTigerError {
   string component = "";
   string kind = "WiredTigerError";
 }
+
+@namespace("unibasql.errors")
+error CatalogError {
+  string error;
+  string component = "";
+  string kind = "CatalogError";
+}

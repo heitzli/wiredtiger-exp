@@ -54,10 +54,27 @@ MOCK_CATALOG = {
 
 
 class QueryAnalyzer:
-    def __init__(self, mock_catalog: dict = MOCK_CATALOG, bypass_catalog: bool = False) -> None:
+    def __init__(self, mock_catalog: dict = MOCK_CATALOG, bypass_catalog: bool = False, catalog_client=None) -> None:
         self.mock_catalog = mock_catalog
         # bypass_catalog as a constructor flag for debugging
         self.bypass_catalog = bypass_catalog
+        self.catalog_client = catalog_client
+
+    def _name_exists(self, name: str) -> bool:
+        if self.catalog_client is not None:
+            return bool(self.catalog_client.exists(name))
+        return name in self.mock_catalog.keys()
+
+    def _bucket(self, name: str) -> dict[str, dict[str, str]]:
+        if self.catalog_client is not None:
+            return self.catalog_client.entries(name)
+        info = self.mock_catalog.get(name)
+        # mock stores DataType values directly; normalize into the wire's prop-map shape
+        return {key: {"type": str(val)} for key, val in info.items()} if info else {}
+
+    @staticmethod
+    def _dtype_of(entry: dict[str, str]) -> DataType:
+        return DataType(entry["type"]) if entry.get("type") else DataType.NULL
 
     def analyze_query(
         self, unresolved_query: UnresolvedQuery | AbstractStatement
@@ -162,7 +179,7 @@ class QueryAnalyzer:
         if isinstance(unresolved_query, UnresolvedTableDDL):
             match unresolved_query.op:
                 case DDLOp.CREATE:
-                    if not self.bypass_catalog and unresolved_query.table.name in self.mock_catalog.keys():
+                    if not self.bypass_catalog and self._name_exists(unresolved_query.table.name):
                         raise ValueError(f"Table {unresolved_query.table.name} already exists")
 
                     resolved_columns = []
@@ -191,9 +208,13 @@ class QueryAnalyzer:
         if isinstance(unresolved_query, UnresolvedIndexDDL):
             match unresolved_query.op:
                 case DDLOp.CREATE:
-                    existing_info = self.mock_catalog.get(unresolved_query.idx_name)
-                    if existing_info is not None and not self.bypass_catalog:
-                        if existing_info:
+                    if not self.bypass_catalog and self._name_exists(unresolved_query.idx_name):
+                        info = self._bucket(unresolved_query.idx_name)
+                        # NOTE an index bucket carries its meta under the reserved "index" key —
+                        # that presence is the discriminator against table buckets.
+                        if "index" in info:
+                            raise ValueError(f"Index {unresolved_query.idx_name} already exists")
+                        if info:
                             raise ValueError(
                                 f"Index name {unresolved_query.idx_name} collides with table {unresolved_query.idx_name}"
                             )
@@ -212,7 +233,7 @@ class QueryAnalyzer:
 
                 case DDLOp.DROP:
                     resolved_table = self._resolve_table([unresolved_query.table])
-                    if not self.bypass_catalog and unresolved_query.idx_name not in self.mock_catalog.keys():
+                    if not self.bypass_catalog and not self._name_exists(unresolved_query.idx_name):
                         raise ValueError(f"Index {unresolved_query.idx_name} does not exist")
 
                     return IndexDDL(op=DDLOp.DROP, table=resolved_table[0], idx_name=unresolved_query.idx_name)
@@ -409,21 +430,42 @@ class QueryAnalyzer:
 
     def _get_schema(self, table_name: str, alias: str | None = None) -> tuple[ResolvedColumn, ...]:
         schema: list[ResolvedColumn] = []
-        table_info = self.mock_catalog.get(table_name)
+        table_info = self._bucket(table_name)
         if not table_info and not self.bypass_catalog:
             raise ValueError(f"Table {table_name} does not exist")
         qualifier = alias or table_name
-        for k, v in (table_info or {}).items():
-            schema.append(ResolvedColumn(name=k, type=v, qualifier=qualifier))
+        columns = table_info.get("schema", table_info) if table_info else {}
+        ordered = sorted(columns.items(), key=lambda item: int(item[1].get("position", 0))) if columns else []
+        for key, entry in ordered:
+            schema.append(ResolvedColumn(name=key, type=self._dtype_of(entry), qualifier=qualifier))
 
         return tuple(schema)
 
     def _resolve_table(self, tables: list[UnresolvedTable]) -> list[ResolvedTable]:
         resolved_tables: list[ResolvedTable] = []
         for table in tables:
-            if table.name not in self.mock_catalog.keys() and not self.bypass_catalog:
+            if not self._name_exists(table.name) and not self.bypass_catalog:
                 raise ValueError(f"Table {table.name} does not exist")
             table_schema = self._get_schema(table_name=table.name, alias=table.alias)
             resolved_tables.append(ResolvedTable(name=table.name, alias=table.alias, table_schema=table_schema))
 
         return resolved_tables
+
+
+class CatalogRpcClient:
+    """Thin adapter exposing the analyzer's catalog needs as RPC calls to the catalog component."""
+
+    def __init__(self, component) -> None:
+        self._component = component
+
+    def exists(self, name: str) -> bool:
+        try:
+            return bool(self._component.call_remote(destination="catalog", rpc_name="exists", params={"name": name}))
+        except Exception as e:
+            raise ValueError(f"Catalog lookup failed for {name!r}: {e}") from e
+
+    def entries(self, name: str) -> dict[str, dict[str, str]]:
+        try:
+            return dict(self._component.call_remote(destination="catalog", rpc_name="entries", params={"name": name}))
+        except Exception as e:
+            raise ValueError(f"Catalog lookup failed for {name!r}: {e}") from e
