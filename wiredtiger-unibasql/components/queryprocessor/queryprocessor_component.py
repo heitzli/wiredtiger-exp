@@ -46,12 +46,14 @@ class QueryProcessorResponder(avro.ipc.Responder):
                     result = res["value"]
                 case AbstractAlgebraNode():
                     res = self.qp.call_remote(
-                        destination="storagemanager",
-                        rpc_name="execute",
+                        destination="queryoptimizer",
+                        rpc_name="optimize",
                         params={"request": {"plan": analyzed_query.to_avro(), "custom": custom}},
                     )
-                    result = res["value"]
+                    # TODO send to query executor
+                    print(res)
                 case AbstractTCLNode():
+                    # TODO handle if full TX
                     res = self.qp.call_remote(
                         destination="storagemanager",
                         rpc_name="execute_tcl",

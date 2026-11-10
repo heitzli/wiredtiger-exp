@@ -71,6 +71,8 @@ class StorageManagerResponder(Responder):
             f"No executor for node kind {kind!r} in storagemanager (algebra execution not implemented yet)"
         )
 
+    # +++ Statements that bypass optimizer and are directly called from IR
+
     def _handle_tx_start(self, node: TxStartNode, tx_id: str):
         if tx_id in self.transactions.keys():
             raise ValueError(f"Transaction with same ID {node.tx_id} running")
@@ -178,6 +180,8 @@ class StorageManagerResponder(Responder):
             with wt_transaction(session):
                 check(session.create(f"table:{node.table.name}", json.dumps(config)))
             return {"value": {}}
+
+    # ---
 
 
 class StorageManagerComponent(Component):

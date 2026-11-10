@@ -1,4 +1,3 @@
-import uuid
 from pathlib import Path
 
 from avro.ipc import Responder

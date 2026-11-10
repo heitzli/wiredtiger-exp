@@ -1,0 +1,25 @@
+// Note for the moment algebra pass through
+
+@namespace("unibasql.queryoptimizer")
+protocol StorageManager {
+  import idl "algebranode.avdl";
+  import idl "errors.avdl";
+
+  record OptimizeRequest {
+    unibasql.queryprocessor.algebra.AlgebraNode plan;
+    union {null, map<string>} custom = null;
+  }
+
+  record WTValue {
+    string type;
+    string value;
+  }
+
+  record OptimizeResponse {
+    unibasql.queryprocessor.algebra.AlgebraNode plan;
+    union {null, map<string>} custom = null;
+  }
+
+
+  OptimizeResponse optimize(OptimizeRequest request) throws unibasql.errors.WiredTigerError;
+}
