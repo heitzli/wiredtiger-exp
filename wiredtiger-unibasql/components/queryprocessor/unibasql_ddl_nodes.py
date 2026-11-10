@@ -17,7 +17,7 @@ from .unibasql_unresolved import ColumnConstraint, DataType, DDLOp
 # NOTE seperate algebra from ddl but effectively the same
 class AbstractDDLNode(BaseModel, ABC):
     model_config = ConfigDict(frozen=True)
-    custom: dict[str, str] | None = None
+    custom: dict[str, str] = dict()
     # TODO in the future each component will have their own protocol folder for the moment ref the "global proto folder"
     _DDL_NODE_SCHEMA: ClassVar[avro.schema.Schema] = avro.schema.parse(
         (Path(__file__).resolve().parents[2] / "protocol" / "ddlnode.avsc").read_text(encoding="utf-8")

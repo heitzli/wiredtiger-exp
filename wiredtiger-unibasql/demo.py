@@ -11,8 +11,11 @@ if __name__ == "__main__":
         component_socket="/tmp/client.sock",
     )
 
+    print(client.begin_transaction())
+
     print(client._query(query="CREATE TABLE test (id INT PRIMARY KEY, name STRING, salary DOUBLE, active BOOL);"))
     # NOTE works with QueryAnalyzer(bypass_catalog=True)
     print(client._query(query="CREATE INDEX test_idx ON test (id, salary);"))
-    print(client._query(query="DROP INDEX test_idx ON test;"))
-    print(client._query(query="DROP TABLE test;"))
+    print(client.commit())
+    # print(client._query(query="DROP INDEX test_idx ON test;"))
+    # print(client._query(query="DROP TABLE test;"))

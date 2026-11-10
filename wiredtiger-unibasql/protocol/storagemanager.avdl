@@ -3,6 +3,7 @@ protocol StorageManager {
   import idl "algebranode.avdl";
   import idl "errors.avdl";
   import idl "ddlnode.avdl";
+  import idl "tclnode.avdl";
 
   record ExecuteQueryRequest {
     unibasql.queryprocessor.algebra.AlgebraNode plan;
@@ -11,11 +12,11 @@ protocol StorageManager {
 
   record WTValue {
     string type;
-    bytes value;
+    string value;
   }
 
   record ExecuteQueryResponse {
-    map<WTValue> value;
+    map<string> value;
     union {null, map<map<WTValue>>} documents = null;
     union {null, map<string>} custom = null;
   }
@@ -26,11 +27,21 @@ protocol StorageManager {
   }
 
   record ExecuteDDLResponse {
-    map<WTValue> value;
+    map<string> value;
+    union {null, map<string>} custom = null;
+  }
+
+  record ExecuteTCLRequest {
+    unibasql.queryprocessor.tcl.TCLNode plan;
+    union {null, map<string>} custom = null;
+  }
+
+  record ExecuteTCLResponse {
+    map<string> value;
     union {null, map<string>} custom = null;
   }
 
   ExecuteQueryResponse execute(ExecuteQueryRequest request) throws unibasql.errors.WiredTigerError;
   ExecuteDDLResponse execute_ddl(ExecuteDDLRequest request) throws unibasql.errors.WiredTigerError;
-
+  ExecuteTCLResponse execute_tcl(ExecuteTCLRequest request) throws unibasql.errors.WiredTigerError;
 }

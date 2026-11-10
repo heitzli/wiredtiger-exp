@@ -45,7 +45,7 @@ class ResolvedColumn(BaseModel):
 
 class AbstractAlgebraNode(BaseModel, ABC):
     model_config = ConfigDict(frozen=True)
-    custom: dict[str, str] | None = None
+    custom: dict[str, str] = dict()
 
     # TODO in the future each component will have their own protocol folder for the moment ref the "global proto folder"
     _ALGEBRA_NODE_SCHEMA: ClassVar[avro.schema.Schema] = avro.schema.parse(

@@ -108,6 +108,23 @@ class QueryAnalyzer:
                     else:
                         insert_columns = all_columns
 
+                    if self.bypass_catalog and not all_columns:
+                        first_row = next(iter(unresolved_query.values), ())
+                        column_names = (
+                            [col.name for col in unresolved_query.columns]
+                            if unresolved_query.columns
+                            else [f"col_{i}" for i, _ in enumerate(first_row)]
+                        )
+                        all_columns = tuple(
+                            ResolvedColumn(
+                                name=name,
+                                qualifier=resolved_table[0].qualifier,
+                                type=lit.type,
+                            )
+                            for name, lit in zip(column_names, first_row, strict=False)
+                        )
+                        insert_columns = all_columns
+
                     for tup in unresolved_query.values:
                         if len(tup) != len(insert_columns):
                             raise ValueError(
@@ -281,8 +298,17 @@ class QueryAnalyzer:
                 if column.name == expr.name and (expr.qualifier is None or table.qualifier == expr.qualifier)
             ]
 
-            if len(candidates) != 1:
+            if len(candidates) > 1:
                 raise ValueError(f"Cannot resolve column {expr.name}")
+
+            if not candidates:
+                if not self.bypass_catalog:
+                    raise ValueError(f"Cannot resolve column {expr.name}")
+                return ColumnRef(
+                    name=expr.name,
+                    qualifier=expr.qualifier if expr.qualifier is not None else resolved_tables[-1].qualifier,
+                    custom=expr.custom,
+                )
 
             table, column = candidates[0]
 

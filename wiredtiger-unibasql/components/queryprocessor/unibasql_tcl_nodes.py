@@ -20,7 +20,7 @@ TxNodes: TypeAlias = AbstractAlgebraNode | AbstractDDLNode | "AbstractTCLNode"
 # NOTE seperate algebra from ddl but effectively the same
 class AbstractTCLNode(BaseModel, ABC):
     model_config = ConfigDict(frozen=True)
-    custom: dict[str, str] | None = None
+    custom: dict[str, str] = dict()
     # TODO in the future each component will have their own protocol folder for the moment ref the "global proto folder"
     _TCL_NODE_SCHEMA: ClassVar[avro.schema.Schema] = avro.schema.parse(
         (Path(__file__).resolve().parents[2] / "protocol" / "tclnode.avsc").read_text(encoding="utf-8")

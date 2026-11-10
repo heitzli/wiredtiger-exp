@@ -10,11 +10,11 @@ protocol Queryprocessor{
 
   record WTValue {
     string type;
-    bytes value;
+    string value;
   }
 
   record EvaluateQueryResponse {
-    map<WTValue> value;
+    map<string> value;
     union {null, map<map<WTValue>>} documents = null;
     union {null, map<string>} custom = null;
   }

@@ -27,23 +27,37 @@ class QueryProcessorResponder(avro.ipc.Responder):
     def evaluate(self, request):
         inner = request["request"]
         query = inner["query"]
+        custom = inner["custom"]
         try:
             # NOTE assume single queries for the moment
-            parsed_query = parse_unibasql(query)[0]
+            parsed_query = parse_unibasql(query)
+            if isinstance(parsed_query, list):
+                parsed_query = parse_unibasql(query)[0]
             analyzed_query = QueryAnalyzer(bypass_catalog=self.qp.bypass_catalog).analyze_query(parsed_query)
+            result: dict = {}
+            res: dict = {}
             match analyzed_query:
                 case AbstractDDLNode():
                     res = self.qp.call_remote(
                         destination="storagemanager",
                         rpc_name="execute_ddl",
-                        params={"request": {"plan": analyzed_query.to_avro()}},
+                        params={"request": {"plan": analyzed_query.to_avro(), "custom": custom}},
                     )
                     result = res["value"]
                 case AbstractAlgebraNode():
-                    pass
+                    res = self.qp.call_remote(
+                        destination="storagemanager",
+                        rpc_name="execute",
+                        params={"request": {"plan": analyzed_query.to_avro(), "custom": custom}},
+                    )
+                    result = res["value"]
                 case AbstractTCLNode():
-                    # TODO check if full tx or only begin and end and then either directly send to sm or go through qp
-                    pass
+                    res = self.qp.call_remote(
+                        destination="storagemanager",
+                        rpc_name="execute_tcl",
+                        params={"request": {"plan": analyzed_query.to_avro(), "custom": custom}},
+                    )
+                    result = res["value"]
 
         except ComponentError:
             # Typed pass-through
@@ -66,7 +80,6 @@ class QueryProcessor(Component):
         component_socket: str,
         bypass_catalog: bool = False,
     ) -> None:
-        # FIX: bypass_catalog debug switch, handed to the analyzer (catalog-enforcing behavior unchanged when False).
         self.bypass_catalog = bypass_catalog
         super().__init__(name, broker_protocol_path, protocol_path, broker_socket, component_socket)
 
