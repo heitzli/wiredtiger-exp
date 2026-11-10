@@ -180,7 +180,7 @@ def test_to_avro_table_scan_datum_shape() -> None:
         "expr": None,
         "children": None,
         "assignments": None,
-        "custom": None,
+        "custom": {},  # FIX: wire custom map is non-optional; root carries {}, inner records stay None
     }
 
 
@@ -366,11 +366,13 @@ def test_bool_literal_expr_survives_via_boolean_branch() -> None:
 @pytest.mark.parametrize(
     "sql,custom",
     [
-        pytest.param("SELECT * FROM employees", None, id="select star"),
-        pytest.param("SELECT name FROM employees WHERE active = TRUE", None, id="select where"),
-        pytest.param("SELECT * FROM employees, departments", None, id="cross"),
-        pytest.param("SELECT * FROM employees UNION SELECT * FROM departments", None, id="set union"),
-        pytest.param("SELECT * FROM employees EXCEPT SELECT * FROM departments", None, id="set except"),
+        # NOTE the analyzer now stamps an (empty) dict on every tree root: the wire's custom map
+        # is not optional anymore, so round-trips decode {} rather than None for "no metadata".
+        pytest.param("SELECT * FROM employees", {}, id="select star"),
+        pytest.param("SELECT name FROM employees WHERE active = TRUE", {}, id="select where"),
+        pytest.param("SELECT * FROM employees, departments", {}, id="cross"),
+        pytest.param("SELECT * FROM employees UNION SELECT * FROM departments", {}, id="set union"),
+        pytest.param("SELECT * FROM employees EXCEPT SELECT * FROM departments", {}, id="set except"),
         pytest.param("INSERT INTO employees VALUES (1, 'x', 2.5, TRUE, 3)", {"source": "insert"}, id="insert"),
         pytest.param("INSERT INTO employees (id) VALUES (1)", {"source": "insert"}, id="insert padded"),
         pytest.param("UPDATE employees SET name = 'x' WHERE id = 1", {"source": "update"}, id="update"),

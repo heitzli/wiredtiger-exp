@@ -84,7 +84,7 @@ def test_to_avro_tx_start_datum_shape() -> None:
         "tx_start": None,
         "tx_end": None,
         "statements": None,
-        "custom": None,
+        "custom": {},  # FIX: wire custom map is non-optional; serializers emit {} at node roots
     }
 
 
@@ -108,7 +108,7 @@ def test_to_avro_transaction_datum_shape() -> None:
         "tx_start": None,
         "tx_end": None,
         "statements": None,
-        "custom": None,
+        "custom": {},
     }
     assert datum["tx_end"]["tx_result"] == "ROLLBACK"
     # Statements ride the union as bare records; branch validation disambiguates the flavor.

@@ -98,7 +98,7 @@ def test_to_avro_create_table_datum_shape() -> None:
         "op": "CREATE",
         "idx_name": None,
         "columns": None,
-        "custom": None,
+        "custom": {},  # FIX: wire custom map is non-optional; root carries {}, inner rows stay None
     }
 
 
