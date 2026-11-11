@@ -13,7 +13,7 @@ def _dispose_iterator(iterator: Any) -> None:
     if callable(close):
         try:
             close()
-        except Exception:  # noqa: BLE001 — disposing must never raise into the worker
+        except Exception:
             pass
 
 

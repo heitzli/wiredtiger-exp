@@ -32,6 +32,7 @@ from .message_codec import (
     message_from_dict,
     message_to_dict,
 )
+from .remote_stream import RemoteStream
 from .stream_registry import StreamRegistry
 
 DEFAULT_STREAM_TTL_SECONDS = 60.0
@@ -121,31 +122,22 @@ class Component(ABC):
         """Mirror an upstream stream one hop behind (init_reply from `call_remote`): the RETURNED id
         is the client-facing one (upstream sid consumed invisibly; non-stream replies handled by
         the caller). Optional `transform` intercepts each page (iterable -> iterable) to run
-        operators in flight (e.g. the EE's operator stage); its exceptions propagate untouched.
+        operators in flight; its exceptions propagate untouched.
         """
+        upstream_stream = RemoteStream(self, upstream, init_reply, self.stream_relay_page)
         upstream_sid = init_reply["stream_id"]
 
         def mirrored_rows() -> Iterator[Any]:
             try:
-                while True:
-                    try:
-                        page = self.call_remote(
-                            upstream, "stream_next", {"stream_id": upstream_sid, "max_items": self.stream_relay_page}
-                        )
-                    except Exception as e:
-                        # NOTE morph foreign RemoteErrors into OUR declared error type
-                        raise WiredTigerError(f"Upstream {upstream} stream failed: {e}") from e
-                    rows: Iterable[Any] = page["rows"]
-                    yield from transform(rows) if transform is not None else rows
-                    if page["done"]:
-                        break
+                for page_rows in upstream_stream.pages():
+                    yield from transform(page_rows) if transform is not None else page_rows
+            except Exception as e:
+                # NOTE morph foreign RemoteErrors into OUR declared error type
+                raise WiredTigerError(f"Upstream {upstream} stream failed: {e}") from e
             finally:
-                try:
-                    self.call_remote(upstream, "stream_close", {"stream_id": upstream_sid})
-                except Exception:  # noqa: BLE001 — upstream already gone is the common benign case
-                    self.log.debug("upstream stream_close failed", extra={"upstream": upstream_sid})
+                upstream_stream.close()  # started-lifecycle; the registry closer covers never-started
 
-        relay_sid = self.registry.open(mirrored_rows())
+        relay_sid = self.registry.open(mirrored_rows(), closer=upstream_stream.close)
         self.log.info("relay stream opened", extra={"stream_id": relay_sid, "upstream": upstream_sid})
         return relay_sid
 
@@ -333,30 +325,22 @@ class Component(ABC):
             reply = self.send_message(message)
         return self._decode_reply(message, reply, rpc_name)
 
-    def stream(self, destination: str, init_rpc: str, params: dict[str, Any], *, max_items: int = 256) -> Iterator[Any]:
-        """Pull-based streaming: a generator yielding items one by one.
+    def iterate(self, destination: str, init_rpc: str, params: dict[str, Any], *, max_items: int = 256) -> RemoteStream:
+        """Issue an RPC and return a handle over the result: `.init` is the initiating reply
+        (for streamed replies `value["columns"]` is the row type authority), iteration pulls
+        the remaining pages, `close()` releases the whole upstream chain. For a one-shot reply
+        the handle simply wraps it — iterate `init` yourself."""
+        init = self.call_remote(destination, init_rpc, params)
+        return RemoteStream(self, destination, init, max_items)
 
-        Calls `init_rpc` on `destination`; if the reply carries a `stream_id` the remaining
-        items are pulled page-by-page via `stream_next`, and `stream_close` runs in `finally`
-        (no-op for a server-side exhausted/closed stream, so early consumer breaks dispose
-        server resources promptly). Replies without a stream_id are one-shot: yielded whole.
-        """
-        first = self.call_remote(destination, init_rpc, params)
-        stream_id = first.get("stream_id")
-        if stream_id is None:
-            yield first
+    def stream(self, destination: str, init_rpc: str, params: dict[str, Any], *, max_items: int = 256) -> Iterator[Any]:
+        """Pull-based convenience: yields ITEMS one by one (rows for a streamed reply; the whole
+        reply for a one-shot). Pages via stream_next; close runs on exhaustion and on early break."""
+        remote = self.iterate(destination, init_rpc, params, max_items=max_items)
+        if not remote.streamed:
+            yield remote.init
             return
-        try:
-            while True:
-                page = self.call_remote(destination, "stream_next", {"stream_id": stream_id, "max_items": max_items})
-                yield from page["rows"]
-                if page["done"]:
-                    break
-        finally:
-            try:
-                self.call_remote(destination, "stream_close", {"stream_id": stream_id})
-            except Exception:
-                self.log.debug("stream_close after pull loop failed", extra={"stream_id": stream_id})
+        yield from remote
 
     def close(self) -> None:
         """Close the connection to the broker."""

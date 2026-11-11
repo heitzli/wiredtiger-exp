@@ -17,6 +17,7 @@ from ..queryprocessor.unibasql_algebra import (
     UnOp,
 )
 from ..queryprocessor.unibasql_unresolved import DataType
+from ..remote_stream import RemoteStream
 from ..storagemanager import row_codec
 
 if TYPE_CHECKING:
@@ -41,8 +42,12 @@ class TableScanExecNode(ExecNode):
         self.scan = scan
         self.custom = custom
         self.ctx = ctx
-        self.upstream_sid: str | None = None
+        self.stream: RemoteStream | None = None
         self.reply_value: dict[str, Any] = {}
+
+    @property
+    def upstream_sid(self) -> str | None:
+        return self.stream.stream_id if self.stream is not None else None
 
     def open(self) -> dict[str, Any]:
         try:
@@ -57,37 +62,22 @@ class TableScanExecNode(ExecNode):
             raise WiredTigerError(f"Upstream storagemanager execute failed: {e}") from e
         if reply.get("stream_id") is None:
             raise WiredTigerError("Storagemanager scan did not open a stream")
-        self.upstream_sid = reply["stream_id"]
-        self.ctx.names, self.ctx.dtypes = row_codec.parse_header((reply.get("value") or {}).get("columns") or "")
+        self.stream = RemoteStream(self.engine, "storagemanager", reply, self.engine.stream_relay_page)
+        self.ctx.names, self.ctx.dtypes = row_codec.parse_header(self.stream.header or "")
         self.reply_value = reply.get("value") or {}
         return reply
 
     def exec(self) -> Iterator[list[Any]]:
-        if self.upstream_sid is None:
+        if self.stream is None:
             raise WiredTigerError("TableScanExecNode used before open()")
         try:
-            while True:
-                page = self.engine.call_remote(
-                    "storagemanager",
-                    "stream_next",
-                    {"stream_id": self.upstream_sid, "max_items": self.engine.stream_relay_page},
-                )
-                for wire_row in page["rows"]:
-                    yield [row_codec.unwire_cell(dtype, cell) for dtype, cell in zip(self.ctx.dtypes, wire_row)]
-                if page["done"]:
-                    break
+            # the RemoteStream closes itself on exhaustion/GC; unwire into the value domain here
+            for wire_row in self.stream:
+                yield [row_codec.unwire_cell(dtype, cell) for dtype, cell in zip(self.ctx.dtypes, wire_row)]
         except WiredTigerError:
             raise
         except Exception as e:
             raise WiredTigerError(f"Upstream storagemanager stream failed: {e}") from e
-        finally:
-            if self.upstream_sid is not None:
-                sid = self.upstream_sid
-                self.upstream_sid = None
-                try:
-                    self.engine.call_remote("storagemanager", "stream_close", {"stream_id": sid})
-                except Exception:
-                    self.engine.log.debug("upstream scan stream_close failed", extra={"stream_id": sid})
 
 
 class SelectionExecNode(ExecNode):
@@ -153,14 +143,10 @@ class ExecTree:
             yield [row_codec.wire_cell(dtype, value) for dtype, value in zip(self.scan.ctx.dtypes, row)]
 
     def abort(self) -> None:
-        sid = self.scan.upstream_sid
-        if sid is None:
-            return
-        self.scan.upstream_sid = None
-        try:
-            self.scan.engine.call_remote("storagemanager", "stream_close", {"stream_id": sid})
-        except Exception:
-            self.scan.engine.log.debug("abort stream_close failed", extra={"stream_id": sid})
+        # covers the never-started-generator corner; RemoteStream.close is idempotent, so this
+        # races harmlessly with the leaf's iteration finalizer
+        if self.scan.stream is not None:
+            self.scan.stream.close()
 
 
 def _comparison(op: str, left: object, right: object) -> bool:

@@ -4,6 +4,7 @@ from avro.ipc import Responder
 from avro.protocol import Protocol
 
 from ..component import Component
+from ..remote_stream import RemoteStream
 
 
 class ClientResponder(Responder):
@@ -29,18 +30,28 @@ class Client(Component):
     def _create_responder(self, protocol: Protocol) -> Responder:
         return ClientResponder(local_protocol=protocol)
 
-    def _query(self, query: str) -> dict:
+    def _query(self, query: str, *, max_items: int = 256) -> RemoteStream | dict:
+        """SQL -> QP evaluate. Streamed replies come back as a RemoteStream (header rides the
+        init reply); one-shot replies (DDL/TCL) come back as the bare dict."""
         res = self.call_remote(
             destination="queryprocessor",
             rpc_name="evaluate",
             params={"request": {"query": query, "custom": {"tx_id": self.tx_id}}},
         )
+        if res.get("stream_id") is not None:
+            return RemoteStream(self, "queryprocessor", res, max_items)
         return res
+
+    def stream_next(self, stream_id: str, max_items: int = 256) -> dict:
+        return self.call_remote("queryprocessor", "stream_next", {"stream_id": stream_id, "max_items": max_items})
+
+    def stream_close(self, stream_id: str) -> bool:
+        return self.call_remote("queryprocessor", "stream_close", {"stream_id": stream_id})
 
     def begin_transaction(self, tx_id: str | None = None):
         q = f"BEGIN TRANSACTION {tx_id};" if tx_id else "BEGIN TRANSACTION;"
         res = self._query(query=q)
-        val = res["value"]
+        val = res["value"]  # TCL is one-shot: the reply is always the bare dict here
         self.tx_id = val.get("tx_id")
         return res
 

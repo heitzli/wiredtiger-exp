@@ -1,13 +1,11 @@
-"""Starts the full UnibaSQL component stack (broker + components) in background threads.
+"""Starts the full UnibaSQL component stack (broker + five components) in background threads.
 
-Runs broker, queryoptimizer, storagemanager, queryprocessor and catalog inside one
-process, each serving on its usual unix socket. Ctrl+C stops them all: worker queues
-are drained, listeners closed, socket files unlinked.
+Each component serves on its usual unix socket. Ctrl+C stops them all: worker queues are
+drained, listeners closed, socket files unlinked.
 """
 
 import logging
 import os
-import signal
 import threading
 import time
 from pathlib import Path
@@ -29,11 +27,6 @@ SOCKET_PATHS = [
     "/tmp/qo.sock",
     "/tmp/ee.sock",
 ]
-
-
-signal.signal(signal.SIGINT, signal.default_int_handler)
-
-SOCKET_PATHS = ["/tmp/broker.sock", "/tmp/catalog.sock", "/tmp/sm.sock", "/tmp/queryprocessor.sock", "/tmp/qo.sock"]
 ROOT = Path(__file__).parent
 
 
