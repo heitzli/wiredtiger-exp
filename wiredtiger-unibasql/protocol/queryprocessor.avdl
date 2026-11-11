@@ -8,17 +8,14 @@ protocol Queryprocessor{
     union {null, map<string>} custom = null;
   }
 
-  record WTValue {
-    string type;
-    string value;
-  }
-
   record EvaluateQueryResponse {
     map<string> value;
-    union {null, map<map<WTValue>>} documents = null;
     union {null, map<string>} custom = null;
+
+    union {null, string} stream_id = null;
   }
 
-  EvaluateQueryResponse evaluate(EvaluateQueryRequest request) throws unibasql.errors.QueryProcessorError, unibasql.errors.UnibaSQLSyntaxError, unibasql.errors.WiredTigerError;
+  import idl "streaming.avdl";
 
+  EvaluateQueryResponse evaluate(EvaluateQueryRequest request) throws unibasql.errors.QueryProcessorError, unibasql.errors.UnibaSQLSyntaxError, unibasql.errors.WiredTigerError;
 }

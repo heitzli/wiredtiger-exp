@@ -8,7 +8,6 @@ records through avro unions (``{"AlgebraNode"|"DDLNode"|"TCLNode": ...}``).
 
 from typing import TypeAlias
 
-import avro.errors
 import pytest
 
 from components.queryprocessor import QueryAnalyzer, parse_unibasql
@@ -150,7 +149,7 @@ def test_to_avro_empty_transaction_writes_empty_statements() -> None:
     ],
 )
 def test_round_trip_bytes(node: Node) -> None:
-    assert AbstractTCLNode.from_avro_bytes(node.to_avro_bytes()) == node
+    assert AbstractTCLNode.from_avro(node.to_avro()) == node
 
 
 def test_round_trip_datum_direct() -> None:
@@ -159,13 +158,13 @@ def test_round_trip_datum_direct() -> None:
 
 
 def test_round_trip_restores_statement_union_flavors() -> None:
-    round_tripped = AbstractTCLNode.from_avro_bytes(txn(statements=[scan(), create_table()]).to_avro_bytes())
+    round_tripped = AbstractTCLNode.from_avro(txn(statements=[scan(), create_table()]).to_avro())
     assert isinstance(round_tripped.statements[0], TableScan)
     assert isinstance(round_tripped.statements[1], TableDDL)
 
 
 def test_tx_result_enum_commutes_via_symbol_names() -> None:
-    round_tripped = AbstractTCLNode.from_avro_bytes(TxEndNode(tx_result=TxResult.ROLLBACK).to_avro_bytes())
+    round_tripped = AbstractTCLNode.from_avro(TxEndNode(tx_result=TxResult.ROLLBACK).to_avro())
     assert round_tripped.tx_result is TxResult.ROLLBACK
 
 
@@ -175,7 +174,7 @@ def test_tx_result_enum_commutes_via_symbol_names() -> None:
 def test_minimal_generic_tcl_node_round_trips() -> None:
     # kind-only nodes (everything else null) are valid wire datums.
     node = TCLNode(kind="Placeholder")
-    assert AbstractTCLNode.from_avro_bytes(node.to_avro_bytes()) == node
+    assert AbstractTCLNode.from_avro(node.to_avro()) == node
 
 
 def test_generic_tcl_node_round_trips() -> None:
@@ -189,14 +188,14 @@ def test_generic_tcl_node_round_trips() -> None:
         custom={"source": "future"},
     )
     assert AbstractTCLNode.from_avro(node.to_avro()) == node
-    assert AbstractTCLNode.from_avro_bytes(node.to_avro_bytes()) == node
+    assert AbstractTCLNode.from_avro(node.to_avro()) == node
 
 
 def test_generic_node_with_registered_kind_decodes_to_concrete() -> None:
     # Encoding a generic node with a registered kind produces the same wire datum a
     # concrete node would; the reader reconstructs the concrete class.
     node = TCLNode(kind="TxStartNode", tx_id="t7", custom={"source": "begin"})
-    round_tripped = AbstractTCLNode.from_avro_bytes(node.to_avro_bytes())
+    round_tripped = AbstractTCLNode.from_avro(node.to_avro())
     assert round_tripped == TxStartNode(tx_id="t7", custom={"source": "begin"})
 
 
@@ -214,10 +213,13 @@ def test_unknown_kind_decodes_to_generic_tcl_node() -> None:
     assert round_tripped.tx_result is None
 
 
-def test_concrete_tcl_node_kinds_are_registered() -> None:
-    # Concrete node kinds self-register for avro decode dispatch (__pydantic_init_subclass__);
-    # the generic TCLNode (kind without a literal default) is excluded.
-    assert set(AbstractTCLNode._AVRO_TCL_NODE_KINDS) == {"TxStartNode", "TxEndNode", "TransactionNode"}
+def test_concrete_tcl_node_kinds_decode_to_typed_classes() -> None:
+    # Dispatch reaches each concrete kind; the generic TCLNode (kind without a literal default)
+    # is reserved for forward compatibility.
+    decoded = AbstractTCLNode.from_avro(txn().to_avro())
+    assert type(decoded) is TransactionNode
+    assert type(decoded.tx_start) is TxStartNode
+    assert type(decoded.tx_end) is TxEndNode
 
 
 # --- analyzer-produced transactions, end to end --------------------------------
@@ -232,7 +234,7 @@ def parse_and_analyze(sql: str) -> Node:
 def test_analyzer_delete_transaction_round_trips() -> None:
     node = parse_and_analyze("BEGIN TRANSACTION t1; DELETE FROM employees WHERE id = 7; ROLLBACK;")
     assert isinstance(node, TransactionNode)
-    round_tripped = AbstractTCLNode.from_avro_bytes(node.to_avro_bytes())
+    round_tripped = AbstractTCLNode.from_avro(node.to_avro())
     assert round_tripped == node
     assert round_tripped.tx_start.tx_id == "t1"
     assert round_tripped.tx_end.tx_result is TxResult.ROLLBACK
@@ -240,7 +242,7 @@ def test_analyzer_delete_transaction_round_trips() -> None:
 
 def test_analyzer_transaction_statements_decode_to_their_codec() -> None:
     node = parse_and_analyze("BEGIN TRANSACTION t1; DELETE FROM employees WHERE id = 7; ROLLBACK;")
-    round_tripped = AbstractTCLNode.from_avro_bytes(node.to_avro_bytes())
+    round_tripped = AbstractTCLNode.from_avro(node.to_avro())
     statement = round_tripped.statements[0]
     assert isinstance(statement, Difference)
     assert statement.custom == {"source": "delete"}
@@ -262,18 +264,11 @@ def test_from_avro_unknown_statement_branch_raises() -> None:
 def test_from_avro_unknown_nested_node_kind_raises_into_generic() -> None:
     # An unknown TCL kind nested as tx_start still decodes (into a generic TCLNode).
     node = TCLNode(kind="Outer", tx_start=TCLNode(kind="DeepProtocol"))
-    round_tripped = AbstractTCLNode.from_avro_bytes(node.to_avro_bytes())
+    round_tripped = AbstractTCLNode.from_avro(node.to_avro())
     assert isinstance(round_tripped.tx_start, TCLNode)
     assert round_tripped.tx_start.kind == "DeepProtocol"
 
 
-@pytest.mark.parametrize("raw", [pytest.param(b"", id="empty"), pytest.param(b"\x99garbage\x00\xff", id="garbage")])
-def test_from_avro_bytes_malformed_input_raises(raw: bytes) -> None:
-    with pytest.raises(avro.errors.InvalidAvroBinaryEncoding):
-        AbstractTCLNode.from_avro_bytes(raw)
-
-
-def test_from_avro_bytes_truncated_input_raises() -> None:
-    raw = txn(statements=[scan()]).to_avro_bytes()
-    with pytest.raises(avro.errors.InvalidAvroBinaryEncoding):
-        AbstractTCLNode.from_avro_bytes(raw[:-1])
+def test_from_avro_missing_kind_raises() -> None:
+    with pytest.raises(KeyError):
+        AbstractTCLNode.from_avro({})

@@ -13,3 +13,4 @@ WT_UNIBASQL_HOME
 **.pytest_cache
 
 **logs/
+*.md

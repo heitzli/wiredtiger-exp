@@ -10,11 +10,6 @@ protocol StorageManager {
     union {null, map<string>} custom = null;
   }
 
-  record WTValue {
-    string type;
-    string value;
-  }
-
   record OptimizeResponse {
     unibasql.queryprocessor.algebra.AlgebraNode plan;
     union {null, map<string>} custom = null;

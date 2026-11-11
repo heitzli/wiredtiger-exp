@@ -15,9 +15,20 @@ from pathlib import Path
 from components import QueryOptimizer, QueryProcessor
 from components.broker import Broker
 from components.catalog import CatalogComponent
+from components.component import Component
+from components.executionengine.executionengine_component import ExecutionEngine
 from components.storagemanager import StorageManagerComponent
 
 logging.basicConfig(level=logging.INFO)
+
+SOCKET_PATHS = [
+    "/tmp/broker.sock",
+    "/tmp/catalog.sock",
+    "/tmp/sm.sock",
+    "/tmp/queryprocessor.sock",
+    "/tmp/qo.sock",
+    "/tmp/ee.sock",
+]
 
 
 signal.signal(signal.SIGINT, signal.default_int_handler)
@@ -26,7 +37,7 @@ SOCKET_PATHS = ["/tmp/broker.sock", "/tmp/catalog.sock", "/tmp/sm.sock", "/tmp/q
 ROOT = Path(__file__).parent
 
 
-def _serve(component, label: str, stop_done: threading.Event) -> None:
+def _serve(component: Component, label: str, stop_done: threading.Event) -> None:
     """Wraps run() so a closed listening socket (our shutdown path) ends the thread quietly."""
     try:
         component.run()
@@ -80,6 +91,14 @@ def main() -> None:
             broker_socket="/tmp/broker.sock",
             component_socket="/tmp/qo.sock",
         ),
+        # mirrors the SM's stream_* surface (opaque relay — see components/executionengine/)
+        "executionengine": lambda: ExecutionEngine(
+            name="executionengine",
+            broker_protocol_path=ROOT / "protocol" / "broker.avpr",
+            protocol_path=ROOT / "protocol" / "executionengine.avpr",
+            broker_socket="/tmp/broker.sock",
+            component_socket="/tmp/ee.sock",
+        ),
     }
 
     components = []
@@ -92,7 +111,9 @@ def main() -> None:
         threads[-1].start()
         time.sleep(0.1)  # let registration land before the next one
 
-    logging.info("stack up: broker, catalog, storagemanager, queryprocessor, queryoptimizer — Ctrl+C to stop")
+    logging.info(
+        "stack up: broker, catalog, storagemanager, queryprocessor, queryoptimizer, executionengine — Ctrl+C to stop"
+    )
 
     try:
         while any(t.is_alive() for t in threads):

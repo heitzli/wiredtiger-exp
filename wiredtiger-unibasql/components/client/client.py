@@ -4,7 +4,6 @@ from avro.ipc import Responder
 from avro.protocol import Protocol
 
 from ..component import Component
-from ..storagemanager.value_utils import decode_value
 
 
 class ClientResponder(Responder):

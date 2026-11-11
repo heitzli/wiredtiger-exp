@@ -5,6 +5,7 @@ import queue
 import socket
 import threading
 from abc import ABC, abstractmethod
+from collections.abc import Callable, Iterable, Iterator
 from concurrent.futures import Future
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -15,7 +16,7 @@ import avro.ipc
 import avro.protocol
 from avro.protocol import Protocol
 
-from .errors import error_from_datum
+from .errors import WiredTigerError, error_from_datum
 from .framedsocket import FramedSocket
 from .logger import get_logger
 from .message_codec import (
@@ -31,6 +32,11 @@ from .message_codec import (
     message_from_dict,
     message_to_dict,
 )
+from .stream_registry import StreamRegistry
+
+DEFAULT_STREAM_TTL_SECONDS = 60.0
+DEFAULT_STREAM_PAGE_CAP = 4096
+DEFAULT_RELAY_PAGE = 256
 
 
 @dataclass
@@ -83,6 +89,13 @@ class Component(ABC):
         self._broker_lock = threading.Lock()
         self._inbox: queue.Queue[_QueuedRequest | None] = queue.Queue()
         self._worker_ident: int | None = None
+        # Generic streaming layer: EVERY component can own streams — locally produced
+        # (register_stream) or mirrored relays of an upstream (open_stream_relay). Serving
+        # stream_next/stream_close is generic; concrete components never parse stream frames.
+        self.registry = StreamRegistry()
+        self.stream_ttl_seconds = DEFAULT_STREAM_TTL_SECONDS
+        self.stream_page_cap = DEFAULT_STREAM_PAGE_CAP
+        self.stream_relay_page = DEFAULT_RELAY_PAGE
         self._worker = threading.Thread(target=self._serve, daemon=True, name=f"{name}-worker")
         self._worker.start()
         self.register()
@@ -91,6 +104,89 @@ class Component(ABC):
     def _create_responder(self, protocol: Protocol) -> avro.ipc.Responder:
         """Define custom responder class that is used to handle rpc calls by the component."""
         ...
+
+    def register_stream(
+        self, iterator: Iterator[Any], resource: Any = None, closer: Callable[[], None] | None = None
+    ) -> str:
+        """Publishes a locally-produced row iterator as a pull stream; returns the client-facing id."""
+        return self.registry.open(iterator, resource=resource, closer=closer)
+
+    def open_stream_relay(
+        self,
+        upstream: str,
+        init_reply: dict,
+        *,
+        transform: Callable[[Iterable[Any]], Iterator[Any]] | None = None,
+    ) -> str:
+        """Mirror an upstream stream one hop behind (init_reply from `call_remote`): the RETURNED id
+        is the client-facing one (upstream sid consumed invisibly; non-stream replies handled by
+        the caller). Optional `transform` intercepts each page (iterable -> iterable) to run
+        operators in flight (e.g. the EE's operator stage); its exceptions propagate untouched.
+        """
+        upstream_sid = init_reply["stream_id"]
+
+        def mirrored_rows() -> Iterator[Any]:
+            try:
+                while True:
+                    try:
+                        page = self.call_remote(
+                            upstream, "stream_next", {"stream_id": upstream_sid, "max_items": self.stream_relay_page}
+                        )
+                    except Exception as e:
+                        # NOTE morph foreign RemoteErrors into OUR declared error type
+                        raise WiredTigerError(f"Upstream {upstream} stream failed: {e}") from e
+                    rows: Iterable[Any] = page["rows"]
+                    yield from transform(rows) if transform is not None else rows
+                    if page["done"]:
+                        break
+            finally:
+                try:
+                    self.call_remote(upstream, "stream_close", {"stream_id": upstream_sid})
+                except Exception:  # noqa: BLE001 — upstream already gone is the common benign case
+                    self.log.debug("upstream stream_close failed", extra={"upstream": upstream_sid})
+
+        relay_sid = self.registry.open(mirrored_rows())
+        self.log.info("relay stream opened", extra={"stream_id": relay_sid, "upstream": upstream_sid})
+        return relay_sid
+
+    def discard_stream(self, stream_id: str) -> bool:
+        """Forced disposal (e.g. TxEnd releasing leaked scans); True if a live stream died."""
+        closed = self.registry.close(stream_id)
+        if closed:
+            self._on_stream_gone(stream_id)
+        return closed
+
+    def _serve_stream_next(self, request: dict) -> dict:
+        """Generic stream_next endpoint — no component-specific code below this line."""
+        self._stream_maintenance()
+        try:
+            rows, done = self.registry.next(
+                stream_id=request["stream_id"], max_items=max(1, min(int(request["max_items"]), self.stream_page_cap))
+            )
+        except ValueError as e:
+            raise WiredTigerError(f"Unknown stream {request['stream_id']!r}") from e
+        if done:
+            self.log.info("stream exhausted", extra={"stream_id": request["stream_id"]})
+            self._on_stream_gone(request["stream_id"])
+        return {"rows": rows, "done": done}
+
+    def _serve_stream_close(self, request: dict) -> bool:
+        """Generic stream_close endpoint; disposing the mirror generator closes upstreams too."""
+        self._stream_maintenance()
+        closed = self.registry.close(request["stream_id"])
+        if closed:
+            self._on_stream_gone(request["stream_id"])
+        self.log.info("stream closed", extra={"stream_id": request["stream_id"], "was_open": closed})
+        return closed
+
+    def _stream_maintenance(self) -> None:
+        """Opportunistic TTL sweep; runs at every stream RPC (no timer thread needed)."""
+        for swept in self.registry.sweep(self.stream_ttl_seconds):
+            self._on_stream_gone(swept)
+
+    def _on_stream_gone(self, stream_id: str) -> None:
+        """Hook: a stream ended (exhausted / closed / swept / force-discarded). Components with
+        additional ownership bookkeeping (e.g. StorageManager tx leases) override this."""
 
     def _load_protocol(self, protocol_path: Path) -> Protocol:
         """Helper function to load the protocol implemented by the component."""
@@ -237,6 +333,31 @@ class Component(ABC):
             reply = self.send_message(message)
         return self._decode_reply(message, reply, rpc_name)
 
+    def stream(self, destination: str, init_rpc: str, params: dict[str, Any], *, max_items: int = 256) -> Iterator[Any]:
+        """Pull-based streaming: a generator yielding items one by one.
+
+        Calls `init_rpc` on `destination`; if the reply carries a `stream_id` the remaining
+        items are pulled page-by-page via `stream_next`, and `stream_close` runs in `finally`
+        (no-op for a server-side exhausted/closed stream, so early consumer breaks dispose
+        server resources promptly). Replies without a stream_id are one-shot: yielded whole.
+        """
+        first = self.call_remote(destination, init_rpc, params)
+        stream_id = first.get("stream_id")
+        if stream_id is None:
+            yield first
+            return
+        try:
+            while True:
+                page = self.call_remote(destination, "stream_next", {"stream_id": stream_id, "max_items": max_items})
+                yield from page["rows"]
+                if page["done"]:
+                    break
+        finally:
+            try:
+                self.call_remote(destination, "stream_close", {"stream_id": stream_id})
+            except Exception:
+                self.log.debug("stream_close after pull loop failed", extra={"stream_id": stream_id})
+
     def close(self) -> None:
         """Close the connection to the broker."""
         self.broker_connection.close()
@@ -377,7 +498,11 @@ class Component(ABC):
             },
         )
         try:
-            response_datum = self.responder.invoke(local_message, request_datum)
+            if method == "stream_next" or method == "stream_close":
+                serve = self._serve_stream_next if method == "stream_next" else self._serve_stream_close
+                response_datum = serve(request_datum)
+            else:
+                response_datum = self.responder.invoke(local_message, request_datum)
         except Exception as exc:
             # Handler errors are encoded into the RPC's declared errors union and
             # travel as data inside the reply, so the broker stays opaque.

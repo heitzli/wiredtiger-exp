@@ -1,4 +1,3 @@
-import io
 from abc import ABC, abstractmethod
 from collections.abc import Mapping
 from pathlib import Path
@@ -76,22 +75,10 @@ class AbstractAlgebraNode(BaseModel, ABC):
         """Render this tree as the plain dict matching the avro AlgebraNode record."""
         return self._node_to_avro()
 
-    def to_avro_bytes(self) -> bytes:
-        """Binary-encode this tree using the compiled protocol/algebranode.avsc."""
-        buffer = io.BytesIO()
-        avro.io.DatumWriter(self._ALGEBRA_NODE_SCHEMA).write(self.to_avro(), avro.io.BinaryEncoder(buffer))
-        return buffer.getvalue()
-
     @classmethod
     def from_avro(cls, datum: Mapping[str, Any]) -> AbstractAlgebraNode:
         """Rebuild a tree from a dict matching the avro AlgebraNode record."""
         return cls._node_from_avro(datum)
-
-    @classmethod
-    def from_avro_bytes(cls, raw: bytes) -> AbstractAlgebraNode:
-        """Decode bytes produced by :meth:`to_avro_bytes` back into a tree."""
-        datum = avro.io.DatumReader(cls._ALGEBRA_NODE_SCHEMA).read(avro.io.BinaryDecoder(io.BytesIO(raw)))
-        return cls.from_avro(datum)
 
     def _node_to_avro(self) -> dict[str, Any]:
         """Python algebra tree -> plain dict matching the avro AlgebraNode record."""

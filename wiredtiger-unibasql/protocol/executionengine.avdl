@@ -1,0 +1,20 @@
+@namespace("unibasql.executionengine")
+protocol ExecutionEngine {
+  import idl "algebranode.avdl";
+  import idl "errors.avdl";
+
+  import idl "streaming.avdl";
+
+  record ExecuteQueryRequest {
+    unibasql.queryprocessor.algebra.AlgebraNode plan;
+    union {null, map<string>} custom = null;
+  }
+
+  record ExecuteQueryResponse {
+    map<string> value;
+    union {null, map<string>} custom = null;
+    union {null, string} stream_id = null;
+  }
+
+  ExecuteQueryResponse execute(ExecuteQueryRequest request) throws unibasql.errors.WiredTigerError;
+}

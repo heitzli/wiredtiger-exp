@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Any
 
 import avro.ipc
 from avro.protocol import Protocol
@@ -14,31 +15,27 @@ from .unibasql_parser import parse_unibasql
 
 
 class QueryProcessorResponder(avro.ipc.Responder):
-    def __init__(self, local_protocol, qp: QueryProcessor):
+    def __init__(self, local_protocol: Protocol, qp: QueryProcessor) -> None:
         super().__init__(local_protocol)
         self.qp = qp
 
-    def invoke(self, local_message, request):  # type: ignore
-        method = local_message.name
-
-        if method == "evaluate":
+    def invoke(self, local_message: Any, request: dict[str, Any]) -> Any:  # type: ignore[override]
+        if local_message.name == "evaluate":
             return self.evaluate(request)
 
-    def evaluate(self, request):
+    def evaluate(self, request: dict[str, Any]) -> dict[str, Any]:
         inner = request["request"]
         query = inner["query"]
         custom = inner["custom"]
+        # NOTE assume single queries for the moment (parser may hand back a list)
+        parsed_query = parse_unibasql(query)
+        if isinstance(parsed_query, list):
+            parsed_query = parsed_query[0]
+        analyzed_query = QueryAnalyzer(
+            bypass_catalog=self.qp.bypass_catalog,
+            catalog_client=CatalogRpcClient(component=self.qp),
+        ).analyze_query(parsed_query)
         try:
-            # NOTE assume single queries for the moment
-            parsed_query = parse_unibasql(query)
-            if isinstance(parsed_query, list):
-                parsed_query = parse_unibasql(query)[0]
-            analyzed_query = QueryAnalyzer(
-                bypass_catalog=self.qp.bypass_catalog,
-                catalog_client=CatalogRpcClient(component=self.qp),
-            ).analyze_query(parsed_query)
-            result: dict = {}
-            res: dict = {}
             match analyzed_query:
                 case AbstractDDLNode():
                     res = self.qp.call_remote(
@@ -46,19 +43,26 @@ class QueryProcessorResponder(avro.ipc.Responder):
                         rpc_name="execute_ddl",
                         params={"request": {"plan": analyzed_query.to_avro(), "custom": custom}},
                     )
-                    result = res["value"]
+                    reply: dict = {"value": res["value"]}
                 case AbstractAlgebraNode():
-                    res = self.qp.call_remote(
+                    # NOTE optimize passes through QO, then the EE executes the plan and streams, QP mirrors the stream via the BASE relay
+                    opt = self.qp.call_remote(
                         destination="queryoptimizer",
                         rpc_name="optimize",
                         params={"request": {"plan": analyzed_query.to_avro(), "custom": custom}},
                     )
-                    # TODO send to query executor
-                    # TODO impl streaming
-                    return {"value": {"todo": "TODO impl call to engine"}}
+                    ee_reply = self.qp.call_remote(
+                        destination="executionengine",
+                        rpc_name="execute",
+                        params={"request": {"plan": opt["plan"], "custom": opt.get("custom") or custom}},
+                    )
+                    if ee_reply.get("stream_id") is not None:
+                        # the header in value["columns"] passes through untouched (streaming.avdl)
+                        qp_sid = self.qp.open_stream_relay("executionengine", ee_reply)
+                        return {"value": ee_reply["value"], "custom": ee_reply.get("custom"), "stream_id": qp_sid}
+                    # one-shot algebra reply, no stream
+                    reply = {"value": ee_reply["value"], "custom": ee_reply.get("custom"), "stream_id": None}
                 case AbstractTCLNode():
-                    # TODO handle if full TX
-
                     if isinstance(analyzed_query, TxStartNode):
                         self.qp.call_remote(
                             destination="catalog", rpc_name="create_snapshot", params={"tx_id": analyzed_query.tx_id}
@@ -73,16 +77,15 @@ class QueryProcessorResponder(avro.ipc.Responder):
                         rpc_name="execute_tcl",
                         params={"request": {"plan": analyzed_query.to_avro(), "custom": custom}},
                     )
-                    result = res["value"]
+                    reply = {"value": res["value"]}
+                case _:
+                    raise QueryProcessorError(f"No evaluator for node {type(analyzed_query).__name__!r}")
 
         except ComponentError:
             # Typed pass-through
             raise
         except Exception as e:
             raise QueryProcessorError(str(e), source=self.qp.name) from e
-        reply = {"value": result}
-        if res.get("documents") is not None:
-            reply["documents"] = res["documents"]
         return reply
 
 

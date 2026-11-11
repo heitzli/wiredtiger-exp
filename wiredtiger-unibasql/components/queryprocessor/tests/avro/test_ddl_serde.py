@@ -8,7 +8,6 @@ node-valued fields.
 
 from typing import TypeAlias
 
-import avro.errors
 import pytest
 
 from components.queryprocessor import QueryAnalyzer, parse_unibasql
@@ -166,7 +165,7 @@ def test_to_avro_inner_records_carry_null_custom() -> None:
     ],
 )
 def test_round_trip_bytes(statement: Node) -> None:
-    assert AbstractDDLNode.from_avro_bytes(statement.to_avro_bytes()) == statement
+    assert AbstractDDLNode.from_avro(statement.to_avro()) == statement
 
 
 def test_round_trip_datum_direct() -> None:
@@ -175,7 +174,7 @@ def test_round_trip_datum_direct() -> None:
 
 
 def test_round_trip_restores_columns_tuple_and_enums() -> None:
-    round_tripped = AbstractDDLNode.from_avro_bytes(create_index().to_avro_bytes())
+    round_tripped = AbstractDDLNode.from_avro(create_index().to_avro())
     assert isinstance(round_tripped, IndexDDL)
     assert isinstance(round_tripped.columns, tuple)
     assert round_tripped.columns[0].type is DataType.INT
@@ -196,7 +195,7 @@ def test_op_enum_commutes_via_symbol_names() -> None:
 def test_minimal_generic_ddl_node_round_trips() -> None:
     # kind-only statements (everything else null) are valid wire datums.
     node = DDLNode(kind="Placeholder")
-    assert AbstractDDLNode.from_avro_bytes(node.to_avro_bytes()) == node
+    assert AbstractDDLNode.from_avro(node.to_avro()) == node
 
 
 def test_generic_ddl_node_round_trips() -> None:
@@ -210,14 +209,14 @@ def test_generic_ddl_node_round_trips() -> None:
         custom={"source": "future"},
     )
     assert AbstractDDLNode.from_avro(node.to_avro()) == node
-    assert AbstractDDLNode.from_avro_bytes(node.to_avro_bytes()) == node
+    assert AbstractDDLNode.from_avro(node.to_avro()) == node
 
 
 def test_generic_node_with_registered_kind_decodes_to_concrete() -> None:
     # Encoding a generic node with a registered kind produces the same wire datum a
     # concrete node would; the reader reconstructs the concrete class.
     node = DDLNode(kind="TableDDL", op=DDLOp.DROP, table=employees_table(), custom={"source": "ddl"})
-    round_tripped = AbstractDDLNode.from_avro_bytes(node.to_avro_bytes())
+    round_tripped = AbstractDDLNode.from_avro(node.to_avro())
     assert round_tripped == TableDDL(op=DDLOp.DROP, table=employees_table(), custom={"source": "ddl"})
 
 
@@ -234,10 +233,11 @@ def test_unknown_kind_decodes_to_generic_ddl_node() -> None:
     assert round_tripped.idx_name is None
 
 
-def test_concrete_ddl_node_kinds_are_registered() -> None:
-    # Concrete node kinds self-register for avro decode dispatch (__pydantic_init_subclass__);
-    # the generic DDLNode (kind without a literal default) is excluded.
-    assert set(AbstractDDLNode._AVRO_DDL_NODE_KINDS) == {"TableDDL", "IndexDDL"}
+def test_concrete_ddl_node_kinds_decode_to_typed_classes() -> None:
+    # Dispatch reaches each concrete kind; the generic DDLNode (kind without a literal default)
+    # is reserved for forward compatibility.
+    assert type(AbstractDDLNode.from_avro(create_table().to_avro())) is TableDDL
+    assert type(AbstractDDLNode.from_avro(create_index().to_avro())) is IndexDDL
 
 
 # --- analyzer-produced statements, end to end ---------------------------------
@@ -247,14 +247,14 @@ def test_analyzer_create_table_round_trips() -> None:
     statements = parse_unibasql("CREATE TABLE users (id INT PRIMARY KEY, name STRING NOT NULL)")
     node = QueryAnalyzer().analyze_query(statements[0])
     assert isinstance(node, TableDDL)
-    assert AbstractDDLNode.from_avro_bytes(node.to_avro_bytes()) == node
+    assert AbstractDDLNode.from_avro(node.to_avro()) == node
 
 
 def test_analyzer_create_index_round_trips() -> None:
     statements = parse_unibasql("CREATE INDEX emp_idx ON employees (id, name)")
     node = QueryAnalyzer().analyze_query(statements[0])
     assert isinstance(node, IndexDDL)
-    assert AbstractDDLNode.from_avro_bytes(node.to_avro_bytes()) == node
+    assert AbstractDDLNode.from_avro(node.to_avro()) == node
 
 
 # --- error paths ---------------------------------------------------------------
@@ -267,13 +267,6 @@ def test_from_avro_unknown_op_symbol_raises() -> None:
         AbstractDDLNode.from_avro(datum)
 
 
-@pytest.mark.parametrize("raw", [pytest.param(b"", id="empty"), pytest.param(b"\x99garbage\x00\xff", id="garbage")])
-def test_from_avro_bytes_malformed_input_raises(raw: bytes) -> None:
-    with pytest.raises(avro.errors.InvalidAvroBinaryEncoding):
-        AbstractDDLNode.from_avro_bytes(raw)
-
-
-def test_from_avro_bytes_truncated_input_raises() -> None:
-    raw = create_index().to_avro_bytes()
-    with pytest.raises(avro.errors.InvalidAvroBinaryEncoding):
-        AbstractDDLNode.from_avro_bytes(raw[:-1])
+def test_from_avro_missing_kind_raises() -> None:
+    with pytest.raises(KeyError):
+        AbstractDDLNode.from_avro({})

@@ -6,7 +6,6 @@ The wire shape is the generic AlgebraNode record from ``protocol/algebranode.avd
 
 from typing import TypeAlias
 
-import avro.errors
 import pytest
 
 from components.queryprocessor import QueryAnalyzer, parse_unibasql
@@ -233,20 +232,20 @@ def test_generic_algebra_node_round_trips() -> None:
         assignments=((rc("name", DataType.STRING), LiteralExpr(type="string", value="x")),),
         custom={"source": "future"},
     )
-    assert AbstractAlgebraNode.from_avro_bytes(node.to_avro_bytes()) == node
+    assert AbstractAlgebraNode.from_avro(node.to_avro()) == node
 
 
 def test_minimal_generic_algebra_node_round_trips() -> None:
     # kind-only nodes (everything else null) are valid wire datums.
     node = AlgebraNode(kind="Placeholder")
-    assert AbstractAlgebraNode.from_avro_bytes(node.to_avro_bytes()) == node
+    assert AbstractAlgebraNode.from_avro(node.to_avro()) == node
 
 
 def test_generic_node_with_registered_kind_decodes_to_concrete() -> None:
     # Encoding a generic node with a registered kind produces the same wire datum a
     # concrete node would; the reader reconstructs the concrete class.
     node = AlgebraNode(kind="Union", children=[scan(), scan_aliased()], custom={"source": "delete"})
-    round_tripped = AbstractAlgebraNode.from_avro_bytes(node.to_avro_bytes())
+    round_tripped = AbstractAlgebraNode.from_avro(node.to_avro())
     assert round_tripped == Union(left=scan(), right=scan_aliased(), custom={"source": "delete"})
 
 
@@ -297,7 +296,7 @@ def test_concrete_node_kinds_are_registered() -> None:
     ],
 )
 def test_round_trip_bytes(node: Node) -> None:
-    assert AbstractAlgebraNode.from_avro_bytes(node.to_avro_bytes()) == node
+    assert AbstractAlgebraNode.from_avro(node.to_avro()) == node
 
 
 def test_round_trip_datum_direct() -> None:
@@ -307,13 +306,13 @@ def test_round_trip_datum_direct() -> None:
 
 def test_round_trip_preserves_custom_markers() -> None:
     node = union_custom()
-    round_tripped = AbstractAlgebraNode.from_avro_bytes(node.to_avro_bytes())
+    round_tripped = AbstractAlgebraNode.from_avro(node.to_avro())
     assert round_tripped.custom == {"source": "insert"}
 
 
 def test_round_trip_preserves_enum_symbols() -> None:
     node = scan_with_constraints()
-    round_tripped = AbstractAlgebraNode.from_avro_bytes(node.to_avro_bytes())
+    round_tripped = AbstractAlgebraNode.from_avro(node.to_avro())
     column = round_tripped.table.table_schema[0]
     assert column.type is DataType.INT
     assert column.constraint is ColumnConstraint.PRIMARY_KEY
@@ -324,7 +323,7 @@ def test_round_trip_preserves_enum_symbols() -> None:
 
 def test_int_values_decode_back_to_int_not_float() -> None:
     # Ints ride the double branch on the wire (see algebranode.avdl); decode renormalizes.
-    round_tripped = AbstractAlgebraNode.from_avro_bytes(scan_values().to_avro_bytes())
+    round_tripped = AbstractAlgebraNode.from_avro(scan_values().to_avro())
     first_row = round_tripped.values[0]
     assert isinstance(first_row[0].value, int)
     assert first_row[0].value == 27
@@ -335,7 +334,7 @@ def test_int_values_decode_back_to_int_not_float() -> None:
 
 def test_padded_null_keeps_none_even_for_int_columns() -> None:
     # ResolvedValue(None) means an unbound column; int() normalization must not coerce it to 0.
-    round_tripped = AbstractAlgebraNode.from_avro_bytes(scan_values().to_avro_bytes())
+    round_tripped = AbstractAlgebraNode.from_avro(scan_values().to_avro())
     padded = round_tripped.values[1]
     assert [v.value for v in padded] == [None, None, None, None]
     assert [v.type for v in padded] == [DataType.INT, DataType.BOOL, DataType.DOUBLE, DataType.STRING]
@@ -346,7 +345,7 @@ def test_int_literal_expr_decodes_to_int() -> None:
         expr=BinOp(op="=", left=ColumnRef(name="id", qualifier="employees"), right=LiteralExpr(type="int", value=3)),
         child=scan(),
     )
-    round_tripped = AbstractAlgebraNode.from_avro_bytes(node.to_avro_bytes())
+    round_tripped = AbstractAlgebraNode.from_avro(node.to_avro())
     literal = round_tripped.expr.right
     assert isinstance(literal, LiteralExpr)
     assert literal.value == 3
@@ -355,7 +354,7 @@ def test_int_literal_expr_decodes_to_int() -> None:
 
 def test_bool_literal_expr_survives_via_boolean_branch() -> None:
     node = selection()
-    round_tripped = AbstractAlgebraNode.from_avro_bytes(node.to_avro_bytes())
+    round_tripped = AbstractAlgebraNode.from_avro(node.to_avro())
     literal = round_tripped.expr.right
     assert literal == LiteralExpr(type="bool", value=False)
 
@@ -382,7 +381,7 @@ def test_bool_literal_expr_survives_via_boolean_branch() -> None:
 )
 def test_analyzer_trees_round_trip(sql: str, custom: dict[str, str] | None) -> None:
     node = parse_and_analyze(sql)
-    round_tripped = AbstractAlgebraNode.from_avro_bytes(node.to_avro_bytes())
+    round_tripped = AbstractAlgebraNode.from_avro(node.to_avro())
     assert round_tripped == node
     assert round_tripped.custom == custom
 
@@ -391,7 +390,7 @@ def test_update_shared_nodes_survive_as_tree() -> None:
     # Documented loss: the analyzer shares one scan/selection instance across the update's
     # union branches; the decoded tree is equal but built from fresh instances.
     node = parse_and_analyze("UPDATE employees SET name = 'x' WHERE id = 1")
-    round_tripped = AbstractAlgebraNode.from_avro_bytes(node.to_avro_bytes())
+    round_tripped = AbstractAlgebraNode.from_avro(node.to_avro())
     assert round_tripped == node
     assert round_tripped.left.right is not round_tripped.right.child
 
@@ -406,13 +405,6 @@ def test_from_avro_unknown_expr_kind_raises() -> None:
         AbstractAlgebraNode.from_avro(datum)
 
 
-@pytest.mark.parametrize("raw", [pytest.param(b"", id="empty"), pytest.param(b"\x99garbage\x00\xff", id="garbage")])
-def test_from_avro_bytes_malformed_input_raises(raw: bytes) -> None:
-    with pytest.raises(avro.errors.InvalidAvroBinaryEncoding):
-        AbstractAlgebraNode.from_avro_bytes(raw)
-
-
-def test_from_avro_bytes_truncated_input_raises() -> None:
-    raw = scan().to_avro_bytes()
-    with pytest.raises(avro.errors.InvalidAvroBinaryEncoding):
-        AbstractAlgebraNode.from_avro_bytes(raw[:-1])
+def test_from_avro_missing_kind_raises() -> None:
+    with pytest.raises(KeyError):
+        AbstractAlgebraNode.from_avro({})

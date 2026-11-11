@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import io
 from abc import ABC, abstractmethod
 from collections.abc import Mapping
 from pathlib import Path
@@ -22,14 +21,6 @@ class AbstractDDLNode(BaseModel, ABC):
     _DDL_NODE_SCHEMA: ClassVar[avro.schema.Schema] = avro.schema.parse(
         (Path(__file__).resolve().parents[2] / "protocol" / "ddlnode.avsc").read_text(encoding="utf-8")
     )
-    _AVRO_DDL_NODE_KINDS: ClassVar[dict[str, type]] = {}
-
-    @classmethod
-    def __pydantic_init_subclass__(cls, **kwargs: Any) -> None:
-        super().__pydantic_init_subclass__(**kwargs)
-        kind_field = cls.model_fields.get("kind", None)
-        if kind_field is not None and isinstance(kind_field.default, str):
-            cls._AVRO_DDL_NODE_KINDS[kind_field.default] = cls
 
     @abstractmethod
     def children(self) -> list[AbstractDDLNode]: ...
@@ -46,22 +37,10 @@ class AbstractDDLNode(BaseModel, ABC):
         """Render this statement as the plain dict matching the avro DDLNode record."""
         return self._node_to_avro()
 
-    def to_avro_bytes(self) -> bytes:
-        """Binary-encode this statement using the compiled protocol/ddlnode.avsc."""
-        buffer = io.BytesIO()
-        avro.io.DatumWriter(self._DDL_NODE_SCHEMA).write(self.to_avro(), avro.io.BinaryEncoder(buffer))
-        return buffer.getvalue()
-
     @classmethod
     def from_avro(cls, datum: Mapping[str, Any]) -> AbstractDDLNode:
         """Rebuild a statement from a dict matching the avro DDLNode record."""
         return cls._node_from_avro(datum)
-
-    @classmethod
-    def from_avro_bytes(cls, raw: bytes) -> AbstractDDLNode:
-        """Decode bytes produced by :meth:`to_avro_bytes` back into a statement."""
-        datum = avro.io.DatumReader(cls._DDL_NODE_SCHEMA).read(avro.io.BinaryDecoder(io.BytesIO(raw)))
-        return cls.from_avro(datum)
 
     def _node_to_avro(self) -> dict[str, Any]:
         """Python DDL statement -> plain dict matching the avro DDLNode record."""

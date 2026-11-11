@@ -5,20 +5,17 @@ protocol StorageManager {
   import idl "ddlnode.avdl";
   import idl "tclnode.avdl";
 
+  import idl "streaming.avdl";
+
   record ExecuteQueryRequest {
     unibasql.queryprocessor.algebra.AlgebraNode plan;
     union {null, map<string>} custom = null;
   }
 
-  record WTValue {
-    string type;
-    string value;
-  }
-
   record ExecuteQueryResponse {
     map<string> value;
-    union {null, map<map<WTValue>>} documents = null;
     union {null, map<string>} custom = null;
+    union {null, string} stream_id = null;
   }
 
   record ExecuteDDLRequest {

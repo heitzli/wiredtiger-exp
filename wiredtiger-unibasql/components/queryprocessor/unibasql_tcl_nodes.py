@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import io
 from abc import ABC, abstractmethod
 from collections.abc import Mapping
 from pathlib import Path
@@ -25,15 +24,6 @@ class AbstractTCLNode(BaseModel, ABC):
     _TCL_NODE_SCHEMA: ClassVar[avro.schema.Schema] = avro.schema.parse(
         (Path(__file__).resolve().parents[2] / "protocol" / "tclnode.avsc").read_text(encoding="utf-8")
     )
-    _AVRO_TCL_NODE_KINDS: ClassVar[dict[str, type]] = {}
-
-    @classmethod
-    def __pydantic_init_subclass__(cls, **kwargs: Any) -> None:
-        super().__pydantic_init_subclass__(**kwargs)
-
-        kind_field = cls.model_fields.get("kind", None)
-        if kind_field is not None and isinstance(kind_field.default, str):
-            cls._AVRO_TCL_NODE_KINDS[kind_field.default] = cls
 
     @abstractmethod
     def children(self) -> list[TxNodes]: ...
@@ -50,22 +40,10 @@ class AbstractTCLNode(BaseModel, ABC):
         """Render this transaction as the plain dict matching the avro TCLNode record."""
         return self._tcl_node_to_avro()
 
-    def to_avro_bytes(self) -> bytes:
-        """Binary-encode this transaction using the compiled protocol/tclnode.avsc."""
-        buffer = io.BytesIO()
-        avro.io.DatumWriter(self._TCL_NODE_SCHEMA).write(self.to_avro(), avro.io.BinaryEncoder(buffer))
-        return buffer.getvalue()
-
     @classmethod
     def from_avro(cls, datum: Mapping[str, Any]) -> AbstractTCLNode:
         """Rebuild a transaction from a dict matching the avro TCLNode record."""
         return cls._tcl_node_from_avro(datum)
-
-    @classmethod
-    def from_avro_bytes(cls, raw: bytes) -> AbstractTCLNode:
-        """Decode bytes produced by :meth:`to_avro_bytes` back into a transaction."""
-        datum = avro.io.DatumReader(cls._TCL_NODE_SCHEMA).read(avro.io.BinaryDecoder(io.BytesIO(raw)))
-        return cls.from_avro(datum)
 
     def _tcl_node_to_avro(self) -> dict[str, Any]:
         """Python TCL node -> plain dict matching the avro TCLNode record."""

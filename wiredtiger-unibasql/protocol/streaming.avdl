@@ -1,0 +1,13 @@
+
+@namespace("unibasql.streaming")
+protocol Streaming {
+  import idl "errors.avdl";
+
+  record StreamNextResponse {
+    array<array<union{null, double, long, string}>> rows;
+    boolean done;
+  }
+
+  StreamNextResponse stream_next(string stream_id, int max_items) throws unibasql.errors.WiredTigerError;
+  boolean stream_close(string stream_id) throws unibasql.errors.WiredTigerError;
+}
