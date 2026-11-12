@@ -1,3 +1,5 @@
+"""Launcher for the query optimizer component."""
+
 from pathlib import Path
 
 from components import QueryOptimizer

@@ -12,6 +12,8 @@ from .unibasql_unresolved import AllowedValue, ColumnConstraint, DataType
 
 
 class ResolvedValue(BaseModel):
+    """A single typed, resolved scalar value."""
+
     kind: Literal["ResolvedValue"] = "ResolvedValue"
     type: DataType
     value: AllowedValue
@@ -24,6 +26,8 @@ class ResolvedValue(BaseModel):
 
 
 class ResolvedTable(BaseModel):
+    """A table whose schema has been resolved from the catalog."""
+
     kind: Literal["ResolvedTable"] = "ResolvedTable"
     name: str
     table_schema: tuple[ResolvedColumn, ...]
@@ -31,10 +35,14 @@ class ResolvedTable(BaseModel):
 
     @property
     def qualifier(self) -> str:
+        """Handle this table is referred to by in plans/queries."""
+
         return self.alias or self.name
 
 
 class ResolvedColumn(BaseModel):
+    """A column of a resolved table schema, with type, constraint and qualifier."""
+
     kind: Literal["ResolvedColumn"] = "ResolvedColumn"
     name: str
     type: DataType
@@ -43,6 +51,8 @@ class ResolvedColumn(BaseModel):
 
 
 class AbstractAlgebraNode(BaseModel, ABC):
+    """Base of the algebra-node hierarchy: frozen Pydantic models, with child traversal via ``child_nodes`` and printing via ``label``."""
+
     model_config = ConfigDict(frozen=True)
     custom: dict[str, str] = dict()
 
@@ -54,6 +64,8 @@ class AbstractAlgebraNode(BaseModel, ABC):
 
     @classmethod
     def __pydantic_init_subclass__(cls, **kwargs: Any) -> None:
+        """Register each subclass by its ``kind`` discriminator for Avro decoding."""
+
         super().__pydantic_init_subclass__(**kwargs)
         # kinds self-register here, depends on pydantic
         kind_field = cls.model_fields.get("kind", None)
@@ -67,6 +79,8 @@ class AbstractAlgebraNode(BaseModel, ABC):
     def label(self) -> str: ...
 
     def print_tree(self, indent=0):
+        """Print this node's subtree, one indented label per line."""
+
         print("  " * indent + self.label())
         for child in self.child_nodes():
             child.print_tree(indent + 1)
@@ -155,6 +169,8 @@ class AbstractAlgebraNode(BaseModel, ABC):
         return {"expr": inner}
 
     def _resolved_column_to_avro(self, column: ResolvedColumn) -> dict[str, Any]:
+        """ResolvedColumn -> matching Avro record datum."""
+
         return {
             "kind": "ResolvedColumn",
             "name": column.name,
@@ -165,9 +181,13 @@ class AbstractAlgebraNode(BaseModel, ABC):
         }
 
     def _resolved_value_to_avro(self, row_value: ResolvedValue) -> dict[str, Any]:
+        """ResolvedValue -> matching Avro record datum."""
+
         return {"kind": "ResolvedValue", "type": row_value.type.name, "value": row_value.value, "custom": None}
 
     def _resolved_table_to_avro(self, table: ResolvedTable) -> dict[str, Any]:
+        """ResolvedTable -> matching Avro record datum."""
+
         return {
             "kind": "ResolvedTable",
             "name": table.name,
@@ -178,12 +198,18 @@ class AbstractAlgebraNode(BaseModel, ABC):
         }
 
     def _values_rows_to_avro(self, values: list[tuple[ResolvedValue, ...]]) -> list[list[dict[str, Any]]]:
+        """Rows of ResolvedValues -> nested Avro datum lists."""
+
         return [[self._resolved_value_to_avro(row_value) for row_value in row] for row in values]
 
     def _columns_to_avro(self, columns: tuple[ResolvedColumn, ...]) -> list[dict[str, Any]]:
+        """Sequence of ResolvedColumns -> list of Avro datums."""
+
         return [self._resolved_column_to_avro(column) for column in columns]
 
     def _assignments_to_avro(self, assignments: tuple[tuple[ResolvedColumn, Expr], ...]) -> list[dict[str, Any]]:
+        """(column, expr) pairs -> ``{"column": ..., "expr": ...}`` Avro datums."""
+
         return [
             {"column": self._resolved_column_to_avro(column), "expr": self._expr_to_avro(assignment_expr)}
             for column, assignment_expr in assignments
@@ -272,6 +298,8 @@ class AbstractAlgebraNode(BaseModel, ABC):
 
     @classmethod
     def _resolved_column_from_avro(cls, datum: Mapping[str, Any]) -> ResolvedColumn:
+        """Avro record datum -> ResolvedColumn."""
+
         return ResolvedColumn(
             name=datum["name"],
             # NOTE: enums commute via their symbol names (avro STRING <-> python DataType.STRING).
@@ -282,6 +310,8 @@ class AbstractAlgebraNode(BaseModel, ABC):
 
     @classmethod
     def _resolved_value_from_avro(cls, datum: Mapping[str, Any]) -> ResolvedValue:
+        """Avro record datum -> ResolvedValue."""
+
         value_type = DataType[datum["type"]]
         value = datum["value"]
         # NOTE: ints ride the double branch on the wire (see the LiteralExpr notes in
@@ -292,6 +322,8 @@ class AbstractAlgebraNode(BaseModel, ABC):
 
     @classmethod
     def _resolved_table_from_avro(cls, datum: Mapping[str, Any]) -> ResolvedTable:
+        """Avro record datum -> ResolvedTable."""
+
         return ResolvedTable(
             name=datum["name"],
             # NOTE: avro spelling is camelCase tableSchema; the python field is table_schema.
@@ -301,14 +333,20 @@ class AbstractAlgebraNode(BaseModel, ABC):
 
     @classmethod
     def _values_rows_from_avro(cls, values: list) -> list[tuple[ResolvedValue, ...]]:
+        """Nested Avro datum lists -> rows of ResolvedValues."""
+
         return [tuple(cls._resolved_value_from_avro(row_value) for row_value in row) for row in values]
 
     @classmethod
     def _columns_from_avro(cls, columns: list) -> tuple[ResolvedColumn, ...]:
+        """List of Avro datums -> sequence of ResolvedColumns."""
+
         return tuple(cls._resolved_column_from_avro(column) for column in columns)
 
     @classmethod
     def _assignments_from_avro(cls, assignments: list) -> tuple[tuple[ResolvedColumn, Expr], ...]:
+        """``{"column": ..., "expr": ...}`` datums -> (column, expr) pairs."""
+
         return tuple(
             (cls._resolved_column_from_avro(assignment["column"]), cls._expr_from_avro(assignment["expr"]))
             for assignment in assignments
@@ -337,6 +375,8 @@ class AlgebraNode(AbstractAlgebraNode):
 
 
 class TableScan(AbstractAlgebraNode):
+    """Full scan of a concrete (catalog-resolved) table."""
+
     kind: Literal["TableScan"] = "TableScan"
     table: ResolvedTable
 
@@ -350,6 +390,8 @@ class TableScan(AbstractAlgebraNode):
 
 
 class VirtualTableScan(AbstractAlgebraNode):
+    """Scan over an in-memory bag of constant tuples (e.g. VALUES / insert payloads)."""
+
     kind: Literal["VirtualTableScan"] = "VirtualTableScan"
     values: list[tuple[ResolvedValue, ...]]
 
@@ -361,6 +403,8 @@ class VirtualTableScan(AbstractAlgebraNode):
 
 
 class Projection(AbstractAlgebraNode):
+    """Relational projection keeping only the given (already star-expanded) columns."""
+
     kind: Literal["Projection"] = "Projection"
     columns: tuple[ResolvedColumn, ...]  # NOTE: star is expanded to all columns present in table
     child: AbstractAlgebraNode
@@ -374,6 +418,8 @@ class Projection(AbstractAlgebraNode):
 
 
 class Selection(AbstractAlgebraNode):
+    """Relational selection keeping only tuples satisfying the predicate."""
+
     kind: Literal["Selection"] = "Selection"
     expr: Expr
     child: AbstractAlgebraNode
@@ -386,6 +432,8 @@ class Selection(AbstractAlgebraNode):
 
 
 class Cross(AbstractAlgebraNode):
+    """Cartesian product of both inputs."""
+
     kind: Literal["Cross"] = "Cross"
     left: AbstractAlgebraNode
     right: AbstractAlgebraNode
@@ -398,6 +446,8 @@ class Cross(AbstractAlgebraNode):
 
 
 class Union(AbstractAlgebraNode):
+    """Bag union (concatenation) of both inputs."""
+
     kind: Literal["Union"] = "Union"
     left: AbstractAlgebraNode
     right: AbstractAlgebraNode
@@ -410,6 +460,8 @@ class Union(AbstractAlgebraNode):
 
 
 class Difference(AbstractAlgebraNode):
+    """Set difference of the left minus the right input."""
+
     kind: Literal["Difference"] = "Difference"
     left: AbstractAlgebraNode
     right: AbstractAlgebraNode
@@ -421,15 +473,12 @@ class Difference(AbstractAlgebraNode):
         return "DIFFERENCE"
 
 
-# NOTE TupleUpdate transforms each input tuple by evaluating assignment expressions
-# and replacing specified attribute values while preserving all other
-# attributes and the relation's cardinality. It provides a reusable mechanism
-# for UPDATE ops and can later support computed attributes, data
-# transformations, normalization, and other tuple-wise ops without
-# introducing dedicated operators for each use case.
-# Seperated from more general ExtendedProjection
-# NOTE this is very relational specific and might not generalize well over different datamodels
 class TupleUpdate(AbstractAlgebraNode):
+    """Transforms each input tuple by evaluating the assignments and replacing the targeted attribute
+    values, preserving all other attributes and the cardinality (in-place update, not a general projection).
+    Deliberately relational-specific: kept apart from ExtendedProjection, may not generalize to other data models.
+    """
+
     kind: Literal["TupleUpdate"] = "TupleUpdate"
 
     assignments: tuple[tuple[ResolvedColumn, Expr], ...]

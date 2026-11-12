@@ -1,3 +1,7 @@
+"""Execution-engine component: executes optimized plans as pull-trees.
+
+Currently a pass-through: algebra flows unchanged from processor through optimizer into the exec engine.
+"""
 from __future__ import annotations
 
 from typing import Any
@@ -11,8 +15,6 @@ from ..component import Component
 from ..errors import WiredTigerError
 from .executor import ExecBuilder, ExecContext
 
-# NOTE currently pass through from algebra through optimizer to exec engine
-
 
 class ExecutionEngineResponder(avro.ipc.Responder):
     """Entry point: execute compiles the ExecTree; all stream FRAMING stays in the Component base."""
@@ -22,6 +24,7 @@ class ExecutionEngineResponder(avro.ipc.Responder):
         self.engine = engine
 
     def invoke(self, local_message: Any, request: dict[str, Any]) -> Any:  # type: ignore[override]
+        """Dispatch the single `execute` RPC to the engine's plan execution."""
         if local_message.name == "execute":
             return self.engine.execute_plan(request["request"])
         raise ValueError(f"Unhandled RPC {local_message.name!r} in executionengine")
@@ -64,4 +67,5 @@ class ExecutionEngine(Component):
         return {"value": init_reply.get("value") or {}, "custom": None, "stream_id": stream_id}
 
     def _create_responder(self, protocol: Protocol) -> avro.ipc.Responder:
+        """Wire this component into its Avro responder."""
         return ExecutionEngineResponder(local_protocol=protocol, engine=self)

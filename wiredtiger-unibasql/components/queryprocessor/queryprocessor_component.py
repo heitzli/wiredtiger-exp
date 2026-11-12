@@ -15,19 +15,29 @@ from .unibasql_parser import parse_unibasql
 
 
 class QueryProcessorResponder(avro.ipc.Responder):
+    """Avro RPC responder exposing this component's evaluate procedure."""
+
     def __init__(self, local_protocol: Protocol, qp: QueryProcessor) -> None:
+        """Bind the responder to the given QueryProcessor instance."""
+
         super().__init__(local_protocol)
         self.qp = qp
 
     def invoke(self, local_message: Any, request: dict[str, Any]) -> Any:  # type: ignore[override]
+        """Dispatch the incoming RPC to its handler."""
+
         if local_message.name == "evaluate":
             return self.evaluate(request)
 
     def evaluate(self, request: dict[str, Any]) -> dict[str, Any]:
+        """Pipeline: parse -> analyze -> optimize -> serialize plan, routed by node kind.
+
+        DDL/TCL go to the storagemanager (TCL touches catalog snapshots); algebra round-trips
+        the query optimizer and the execution engine, with the QP relaying streamed results.
+        """
         inner = request["request"]
         query = inner["query"]
         custom = inner["custom"]
-        # NOTE assume single queries for the moment (parser may hand back a list)
         parsed_query = parse_unibasql(query)
         if isinstance(parsed_query, list):
             parsed_query = parsed_query[0]
@@ -45,7 +55,6 @@ class QueryProcessorResponder(avro.ipc.Responder):
                     )
                     reply: dict = {"value": res["value"]}
                 case AbstractAlgebraNode():
-                    # NOTE optimize passes through QO, then the EE executes the plan and streams, QP mirrors the stream via the BASE relay
                     opt = self.qp.call_remote(
                         destination="queryoptimizer",
                         rpc_name="optimize",
@@ -57,7 +66,6 @@ class QueryProcessorResponder(avro.ipc.Responder):
                         params={"request": {"plan": opt["plan"], "custom": opt.get("custom") or custom}},
                     )
                     if ee_reply.get("stream_id") is not None:
-                        # the header in value["columns"] passes through untouched (streaming.avdl)
                         qp_sid = self.qp.open_stream_relay("executionengine", ee_reply)
                         return {"value": ee_reply["value"], "custom": ee_reply.get("custom"), "stream_id": qp_sid}
                     # one-shot algebra reply, no stream
@@ -90,6 +98,8 @@ class QueryProcessorResponder(avro.ipc.Responder):
 
 
 class QueryProcessor(Component):
+    """Component that parses, analyzes and routes UnibaSQL queries into executable plans."""
+
     def __init__(
         self,
         name: str,
@@ -99,8 +109,12 @@ class QueryProcessor(Component):
         component_socket: str,
         bypass_catalog: bool = False,
     ) -> None:
+        """Same as the component default, plus the ``bypass_catalog`` debugging flag."""
+
         self.bypass_catalog = bypass_catalog
         super().__init__(name, broker_protocol_path, protocol_path, broker_socket, component_socket)
 
     def _create_responder(self, protocol: Protocol) -> avro.ipc.Responder:
+        """Wire the Avro protocol to this instance's responder."""
+
         return QueryProcessorResponder(local_protocol=protocol, qp=self)

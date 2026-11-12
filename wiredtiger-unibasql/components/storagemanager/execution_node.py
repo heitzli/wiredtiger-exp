@@ -1,3 +1,5 @@
+"""LEGACY dict-row executor graph (companion of executor.py): executors materialize whole rows
+as ``{"_id": ..., attr: value}`` dicts instead of streaming raw wire tuples."""
 import uuid
 from abc import ABC, abstractmethod
 
@@ -9,11 +11,15 @@ from .wt_utils import wt_transaction
 
 
 class ExecNode(ABC):
+    """Abstract relational-algebra executor node: yields materialized document dicts per connection."""
+
     @abstractmethod
     def execute(self, wt_conn: wiredtiger.Connection): ...
 
 
 class TableScanExecNode(ExecNode):
+    """Full-table scan regrouping (record-id, attribute)-cells back into one dict per document,
+    synthesizing the ``_id`` UUID from the key."""
     def __init__(self, algebra_node: TableScan) -> None:
         self.table = algebra_node.table
         self.kind = algebra_node.kind
@@ -43,6 +49,8 @@ class TableScanExecNode(ExecNode):
 
 
 class SelectionExecNode(ExecNode):
+    """Filtering pass-through: emits child documents satisfying the selection predicate."""
+
     def __init__(self, algebra_node: Selection, table_scan_exec: TableScanExecNode) -> None:
         self.expr = algebra_node.expr
         self.child = table_scan_exec
@@ -54,9 +62,10 @@ class SelectionExecNode(ExecNode):
 
 
 class ProjectionExecNode(ExecNode):
+    """Keeps only projected attributes; ``_id`` is always included."""
+
     def __init__(self, algebra_node: Projection, child: SelectionExecNode | TableScanExecNode) -> None:
         self.projection: set[str] = set(k.name for k in algebra_node.attributes)
-        # always return the id
         self.projection.add("_id")
         self.child = child
 
@@ -68,6 +77,8 @@ class ProjectionExecNode(ExecNode):
 
 
 class ExecBuilder:
+    """Compiles algebra nodes into the matching ExecNode tree (recurses into children)."""
+
     def build(self, algebra_node: AbstractAlgebraNode) -> ExecNode:  # type: ignore
         if isinstance(algebra_node, TableScan):
             return TableScanExecNode(algebra_node=algebra_node)

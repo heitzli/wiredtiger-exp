@@ -18,11 +18,8 @@ def check(err: int, *, what: str = "", source: str | None = None) -> None:
 
 @contextmanager
 def wt_transaction(session: wiredtiger.Session, *, source: str | None = None) -> Iterator[wiredtiger.Session]:
-    """Run a block inside a WiredTiger transaction.
-
-    Begins the transaction, commits on normal exit and rolls back whenever the
-    block raises (including generator abandonment via ``GeneratorExit``).
-    """
+    """Run a block inside a WiredTiger transaction: begins it, commits on normal exit,
+    rolls back on any exception (including generator abandonment via ``GeneratorExit``)."""
     check(session.begin_transaction(), what="begin_transaction", source=source)
     try:
         yield session

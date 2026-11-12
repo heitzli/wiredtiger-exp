@@ -1,3 +1,5 @@
+"""Launcher for the storage manager component."""
+
 from pathlib import Path
 
 from components.storagemanager import StorageManagerComponent

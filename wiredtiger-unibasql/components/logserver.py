@@ -9,6 +9,7 @@ LOG_FILE = Path(__file__).resolve().parent.parent / "logs" / "log.jsonl"
 
 
 def render(entry: dict) -> str:
+    """Human-readable one-line rendering of a log entry; JSON-encodes structured fields and appends exception text."""
     line = f"{entry.get('timestamp', '')} {entry.get('level', ''):<7} {entry.get('component', '')}: {entry.get('message', '')}"
     for field in ("peer", "rpc", "correlation_id", "content"):
         value = entry.get(field)
@@ -22,6 +23,7 @@ def render(entry: dict) -> str:
 
 
 def connection_handler(server: "LogServer"):
+    """Factory returning the per-connection handler class that feeds the given server."""
     class EntryHandler(socketserver.StreamRequestHandler):
         def handle(self) -> None:
             for raw in self.rfile:  # newline-delimited JSON entries
@@ -42,6 +44,8 @@ def connection_handler(server: "LogServer"):
 
 
 class LogServer:
+    """Collects newline-delimited JSON log entries over TCP and appends them to a JSONL file."""
+
     def __init__(
         self,
         host: str = "127.0.0.1",
@@ -49,6 +53,7 @@ class LogServer:
         out_path: str | Path = LOG_FILE,
         print_entries: bool = False,
     ) -> None:
+        """Open the output file and bind the TCP listener (`print_entries` mirrors entries to stdout)."""
         self.host = host
         self.port = port
         self.print_entries = print_entries
@@ -68,12 +73,14 @@ class LogServer:
             print(f"[logserver] listening on {host}:{port}, writing {out_path}", flush=True)
 
     def write_line(self, line: str) -> None:
+        """Append one raw JSON line to the output file (thread-safe)."""
         with self._out_lock:
             if self._out is not None:
                 self._out.write(line + "\n")
                 self._out.flush()
 
     def serve_forever(self) -> None:
+        """Accept connections until interrupted, then close."""
         try:
             self._server.serve_forever()
         except KeyboardInterrupt:
@@ -82,12 +89,14 @@ class LogServer:
             self.close()
 
     def start_background(self) -> threading.Thread:
+        """Run serve_forever on a daemon thread and return it."""
         thread = threading.Thread(target=self.serve_forever, name="log-collector", daemon=True)
         self._serve_thread = thread
         thread.start()
         return thread
 
     def close(self) -> None:
+        """Shut the server down and release the output file."""
         if self._serve_thread is not None and self._serve_thread is not threading.current_thread():
             self._server.shutdown()
         self._server.server_close()

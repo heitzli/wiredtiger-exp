@@ -1,3 +1,5 @@
+"""DML smoke test: runs DDL handlers directly against the storage manager."""
+
 from pathlib import Path
 
 from components.queryprocessor.unibasql_algebra import ResolvedColumn, ResolvedTable

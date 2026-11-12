@@ -180,14 +180,7 @@ class EndTransaction(AbstractStatement):
 
 @dataclass(frozen=True)
 class Transaction(AbstractStatement):
-    """Represents an entire transaction declared as a query.
-
-    Example:
-        BEGIN TRANSACTION tx1;
-        CREATE TABLE ...;
-        INSERT ...;
-        COMMIT;
-    """
+    """Represents an entire transaction declared as a query, e.g. ``BEGIN; CREATE TABLE ...; COMMIT;``."""
 
     tx_start: StartTransaction
     tx_end: EndTransaction

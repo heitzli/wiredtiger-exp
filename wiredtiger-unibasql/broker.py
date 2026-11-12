@@ -1,3 +1,5 @@
+"""Launcher for the message broker component."""
+
 from pathlib import Path
 
 from components.broker import Broker

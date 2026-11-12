@@ -1,3 +1,4 @@
+"""Scratch test: open a WireTiger connection and dump metadata: cursor values."""
 import wiredtiger
 from wiredtiger import wiredtiger_open
 

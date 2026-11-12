@@ -13,8 +13,10 @@ from .unibasql_algebra import ResolvedColumn, ResolvedTable
 from .unibasql_unresolved import ColumnConstraint, DataType, DDLOp
 
 
-# NOTE seperate algebra from ddl but effectively the same
 class AbstractDDLNode(BaseModel, ABC):
+    """Mirrors the algebra node hierarchy (same modeling/traversal), but for DDL statements;
+    deliberately kept separate from the relational operators despite the overlap."""
+
     model_config = ConfigDict(frozen=True)
     custom: dict[str, str] = dict()
     # TODO in the future each component will have their own protocol folder for the moment ref the "global proto folder"
@@ -29,6 +31,8 @@ class AbstractDDLNode(BaseModel, ABC):
     def label(self) -> str: ...
 
     def print_tree(self, indent=0):
+        """Print this statement's subtree, one indented label per line."""
+
         print("  " * indent + self.label())
         for child in self.children():
             child.print_tree(indent + 1)
@@ -77,6 +81,8 @@ class AbstractDDLNode(BaseModel, ABC):
         return datum
 
     def _resolved_column_to_avro(self, column: ResolvedColumn) -> dict[str, Any]:
+        """ResolvedColumn -> matching Avro record datum."""
+
         return {
             "kind": "ResolvedColumn",
             "name": column.name,
@@ -87,6 +93,8 @@ class AbstractDDLNode(BaseModel, ABC):
         }
 
     def _resolved_table_to_avro(self, table: ResolvedTable) -> dict[str, Any]:
+        """ResolvedTable -> matching Avro record datum."""
+
         return {
             "kind": "ResolvedTable",
             "name": table.name,
@@ -97,6 +105,8 @@ class AbstractDDLNode(BaseModel, ABC):
         }
 
     def _columns_to_avro(self, columns: tuple[ResolvedColumn, ...]) -> list[dict[str, Any]]:
+        """Sequence of ResolvedColumns -> list of Avro datums."""
+
         return [self._resolved_column_to_avro(column) for column in columns]
 
     @classmethod
@@ -132,6 +142,8 @@ class AbstractDDLNode(BaseModel, ABC):
 
     @classmethod
     def _resolved_column_from_avro(cls, datum: Mapping[str, Any]) -> ResolvedColumn:
+        """Avro record datum -> ResolvedColumn."""
+
         return ResolvedColumn(
             name=datum["name"],
             # NOTE: enums commute via their symbol names (avro STRING <-> python DataType.STRING).
@@ -142,6 +154,8 @@ class AbstractDDLNode(BaseModel, ABC):
 
     @classmethod
     def _resolved_table_from_avro(cls, datum: Mapping[str, Any]) -> ResolvedTable:
+        """Avro record datum -> ResolvedTable."""
+
         return ResolvedTable(
             name=datum["name"],
             # NOTE: avro spelling is camelCase tableSchema; the python field is table_schema.
@@ -151,10 +165,14 @@ class AbstractDDLNode(BaseModel, ABC):
 
     @classmethod
     def _columns_from_avro(cls, columns: list) -> tuple[ResolvedColumn, ...]:
+        """List of Avro datums -> sequence of ResolvedColumns."""
+
         return tuple(cls._resolved_column_from_avro(column) for column in columns)
 
 
 class DDLNode(AbstractDDLNode):
+    """Generic DDL statement with no fixed shape; also the forward-compatible decode fallback."""
+
     kind: str
     op: DDLOp | None = None
     table: ResolvedTable | None = None
@@ -169,6 +187,8 @@ class DDLNode(AbstractDDLNode):
 
 
 class TableDDL(AbstractDDLNode):
+    """Typed CREATE TABLE / DROP TABLE statement."""
+
     kind: Literal["TableDDL"] = "TableDDL"
     op: DDLOp
     table: ResolvedTable
@@ -184,6 +204,8 @@ class TableDDL(AbstractDDLNode):
 
 
 class IndexDDL(AbstractDDLNode):
+    """Typed CREATE INDEX / DROP INDEX statement."""
+
     kind: Literal["IndexDDL"] = "IndexDDL"
     op: DDLOp
     idx_name: str

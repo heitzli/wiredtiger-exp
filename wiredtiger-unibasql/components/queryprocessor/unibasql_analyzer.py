@@ -1,7 +1,6 @@
-# NOTE: currently a mcok implementation but normally should check if the syntactically correct query is also
-# semantically correct by checking table schemas etc through the catalog manager
-
-# TODO: need to somewhere add NOT NULL check if col has this constraint!
+"""Semantic analyzer for UnibaSQL. Currently a MOCK: assumes simple in-memory catalog via RPC;
+does not yet enforce NOT NULL (TODO).
+"""
 
 from .expression import BinOp, ColumnRef, Expr, LiteralExpr, UnOp
 from .unibasql_algebra import (
@@ -54,18 +53,27 @@ MOCK_CATALOG = {
 
 
 class QueryAnalyzer:
+    """Resolves names (via a real catalog over RPC or the mock dict), validates the unresolved
+    AST, and lowers it to the algebra/DDL/TCL node trees."""
+
     def __init__(self, mock_catalog: dict = MOCK_CATALOG, bypass_catalog: bool = False, catalog_client=None) -> None:
+        """Configure which catalog to consult, with an escape hatch for debugging."""
+
         self.mock_catalog = mock_catalog
         # bypass_catalog as a constructor flag for debugging
         self.bypass_catalog = bypass_catalog
         self.catalog_client = catalog_client
 
     def _name_exists(self, name: str) -> bool:
+        """Whether a table/index with this name exists in the active catalog."""
+
         if self.catalog_client is not None:
             return bool(self.catalog_client.exists(name))
         return name in self.mock_catalog.keys()
 
     def _bucket(self, name: str) -> dict[str, dict[str, str]]:
+        """All stored entries for a name (column/type property maps)."""
+
         if self.catalog_client is not None:
             return self.catalog_client.entries(name)
         info = self.mock_catalog.get(name)
@@ -74,11 +82,17 @@ class QueryAnalyzer:
 
     @staticmethod
     def _dtype_of(entry: dict[str, str]) -> DataType:
+        """Extract the DataType from a catalog entry (NULL if absent)."""
+
         return DataType(entry["type"]) if entry.get("type") else DataType.NULL
 
     def analyze_query(
         self, unresolved_query: UnresolvedQuery | AbstractStatement
     ) -> AbstractAlgebraNode | AbstractDDLNode | AbstractTCLNode:
+        """End-to-end analysis per statement kind: resolve tables/projections, validate,
+        and lower DQL/DML to algebra, DDL to resolved statements, transactions to TCL nodes.
+        """
+
         if isinstance(unresolved_query, UnresolvedDQL):
             resolved_tables = self._resolve_table(tables=unresolved_query.table)
             resolved_projection = self._resolve_projection(
@@ -261,6 +275,8 @@ class QueryAnalyzer:
         where: Expr | None,
         setlist: list[tuple[UnresolvedColumn, UnresolvedLiteralExpr]],
     ) -> AbstractAlgebraNode:
+        """Lower UPDATE to Difference(remaining) ∪ TupleUpdate(selected rows)."""
+
         scan = TableScan(table=table)
         resolved_where = self._resolve_expr(where, resolved_tables=[table])
         assignments = tuple(
@@ -280,6 +296,7 @@ class QueryAnalyzer:
         insert_columns: tuple[ResolvedColumn, ...],
         values: list[list[UnresolvedLiteralExpr]],
     ) -> list[tuple[ResolvedValue, ...]]:
+        """Right-pad each value row with NULLs so tuples span all table columns."""
 
         column_indices = {column.name: i for i, column in enumerate(all_columns)}
 
@@ -307,6 +324,8 @@ class QueryAnalyzer:
         return padded_values
 
     def _resolve_expr(self, expr: Expr | None, resolved_tables: list[ResolvedTable]) -> Expr | None:
+        """Recursively lower an expression into resolved values, binding column refs against the resolved tables."""
+
         if expr is None:
             return None
         if isinstance(expr, (ColumnRef, LiteralExpr)):
@@ -364,6 +383,8 @@ class QueryAnalyzer:
         raise TypeError(f"Unknown expression type: {type(expr).__name__}")
 
     def _build_from(self, resolved_tables: list[ResolvedTable]) -> AbstractAlgebraNode:
+        """Chain TableScans into a cross-product join tree."""
+
         if not resolved_tables:
             raise ValueError("At least one table is required")
 
@@ -375,6 +396,8 @@ class QueryAnalyzer:
         return root
 
     def _apply_selection(self, root: AbstractAlgebraNode, where: Expr | None) -> AbstractAlgebraNode:
+        """Wrap ``root`` in a Selection when a WHERE clause is present."""
+
         if where is None:
             return root
         return Selection(expr=where, child=root)
@@ -382,11 +405,15 @@ class QueryAnalyzer:
     def _apply_projection(
         self, root: AbstractAlgebraNode, projection: tuple[ResolvedColumn, ...]
     ) -> AbstractAlgebraNode:
+        """Cap the plan with a Projection over the resolved columns."""
+
         return Projection(columns=projection, child=root)
 
     def _resolve_projection(
         self, unresolved_projection: Star | list[UnresolvedColumn], resolved_tables: list[ResolvedTable]
     ) -> tuple[ResolvedColumn, ...]:
+        """Resolve the select list against the tables; ``*`` expands to every column."""
+
         if unresolved_projection == "*":
             return tuple(schema for table in resolved_tables for schema in table.table_schema)
 
@@ -429,6 +456,8 @@ class QueryAnalyzer:
         return tuple(projection)
 
     def _get_schema(self, table_name: str, alias: str | None = None) -> tuple[ResolvedColumn, ...]:
+        """Fetch a table's schema from the catalog bucket, ordered by column position."""
+
         schema: list[ResolvedColumn] = []
         table_info = self._bucket(table_name)
         if not table_info and not self.bypass_catalog:
@@ -442,6 +471,8 @@ class QueryAnalyzer:
         return tuple(schema)
 
     def _resolve_table(self, tables: list[UnresolvedTable]) -> list[ResolvedTable]:
+        """Existence-check and schema-resolve each table reference."""
+
         resolved_tables: list[ResolvedTable] = []
         for table in tables:
             if not self._name_exists(table.name) and not self.bypass_catalog:
@@ -459,12 +490,16 @@ class CatalogRpcClient:
         self._component = component
 
     def exists(self, name: str) -> bool:
+        """RPC existence check for a catalog object."""
+
         try:
             return bool(self._component.call_remote(destination="catalog", rpc_name="exists", params={"name": name}))
         except Exception as e:
             raise ValueError(f"Catalog lookup failed for {name!r}: {e}") from e
 
     def entries(self, name: str) -> dict[str, dict[str, str]]:
+        """RPC fetch of all stored entries under ``name``."""
+
         try:
             return dict(self._component.call_remote(destination="catalog", rpc_name="entries", params={"name": name}))
         except Exception as e:

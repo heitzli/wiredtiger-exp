@@ -25,17 +25,23 @@ if TYPE_CHECKING:
 
 
 class ExecContext:
+    """Shared per-plan column metadata (names/dtypes), filled by the leaf scan's header parse."""
+
     def __init__(self) -> None:
         self.names: list[str] = []
         self.dtypes: list[DataType] = []
 
 
 class ExecNode(ABC):
+    """Operator node in the compiled pull-tree; subclasses pull rows from their child."""
+
     @abstractmethod
-    def exec(self) -> Iterator[list[Any]]: ...
+    def exec(self) -> Iterator[list[Any]]:
+        """Yield logical rows lazily until the subtree is exhausted."""
 
 
 class TableScanExecNode(ExecNode):
+    """Leaf node: opens a scan on the storagemanager and iterates its remote stream."""
     def __init__(self, engine: Component, scan: TableScan, custom: dict[str, str] | None, ctx: ExecContext) -> None:
         self.engine = engine
         self.table = scan.table.name
@@ -47,9 +53,11 @@ class TableScanExecNode(ExecNode):
 
     @property
     def upstream_sid(self) -> str | None:
+        """Stream id of the storagemanager reply once open() ran; None before that."""
         return self.stream.stream_id if self.stream is not None else None
 
     def open(self) -> dict[str, Any]:
+        """Invoke the storagemanager's execute and adopt the returned remote stream, deriving ctx metadata from its header."""
         try:
             reply = self.engine.call_remote(
                 "storagemanager",
@@ -68,10 +76,10 @@ class TableScanExecNode(ExecNode):
         return reply
 
     def exec(self) -> Iterator[list[Any]]:
+        """Iterate the remote stream, unwiring cells into the value domain; the RemoteStream closes itself on exhaustion/GC."""
         if self.stream is None:
             raise WiredTigerError("TableScanExecNode used before open()")
         try:
-            # the RemoteStream closes itself on exhaustion/GC; unwire into the value domain here
             for wire_row in self.stream:
                 yield [row_codec.unwire_cell(dtype, cell) for dtype, cell in zip(self.ctx.dtypes, wire_row)]
         except WiredTigerError:
@@ -81,24 +89,31 @@ class TableScanExecNode(ExecNode):
 
 
 class SelectionExecNode(ExecNode):
+    """Filter node: forwards only child rows satisfying the predicate."""
+
     def __init__(self, expr: Expr, child: ExecNode, ctx: ExecContext) -> None:
         self.expr = expr
         self.child = child
         self.ctx = ctx
 
     def exec(self) -> Iterator[list[Any]]:
+        """Pull child rows and yield those whose row-dict satisfies the predicate."""
         for row in self.child.exec():
             if satisfies(self.expr, dict(zip(self.ctx.names, row))):
                 yield row
 
 
 class ProjectionExecNode(ExecNode):
+    """Compute node: evaluates the projection's expressions over each child row."""
+
     def __init__(self, projection: Projection, child: ExecNode, ctx: ExecContext) -> None:
+        """Wrap an algebra Projection around an existing child subtree."""
         self.projection = projection
         self.child = child
         self.ctx = ctx
 
     def exec(self) -> Iterator[list[Any]]:
+        """Apply project_row to each child row."""
         for row in self.child.exec():
             yield project_row(row, self.ctx.names, self.projection)
 
@@ -131,25 +146,29 @@ class ExecBuilder:
 
 
 class ExecTree:
+    """Compiled exec-tree: the root operator plus its leaf TableScanExecNode (which owns the stream)."""
+
     def __init__(self, root: ExecNode, scan: TableScanExecNode) -> None:
         self.root = root
         self.scan = scan
 
     def open(self) -> dict[str, Any]:
+        """Delegate to the leaf scan so the storagemanager stream is established."""
         return self.scan.open()
 
     def exec(self) -> Iterator[list[Any]]:
+        """Pull rows through the tree and re-wire them onto the scan's dtypes."""
         for row in self.root.exec():
             yield [row_codec.wire_cell(dtype, value) for dtype, value in zip(self.scan.ctx.dtypes, row)]
 
     def abort(self) -> None:
-        # covers the never-started-generator corner; RemoteStream.close is idempotent, so this
-        # races harmlessly with the leaf's iteration finalizer
+        """Close the leaf's stream early; covers the never-started-generator corner (close is idempotent, racing harmlessly with the leaf's iteration finalizer)."""
         if self.scan.stream is not None:
             self.scan.stream.close()
 
 
 def _comparison(op: str, left: object, right: object) -> bool:
+    """Binary scalar comparison; NULL operands yield false (3VL simplified)."""
     if left is None or right is None:
         return False
     match op:
@@ -169,7 +188,7 @@ def _comparison(op: str, left: object, right: object) -> bool:
 
 
 def satisfies(expr: Expr | None, values: dict[str, object]) -> bool:
-    # NOTE: NULL = false
+    """Evaluate a predicate expression against a row-dict; NULL comparisons yield false (3VL simplified)."""
     if expr is None:
         return True
     if isinstance(expr, LiteralExpr):
@@ -189,6 +208,7 @@ def satisfies(expr: Expr | None, values: dict[str, object]) -> bool:
 
 
 def _predicate_binop(expr: BinOp, values: dict[str, object]) -> bool:
+    """Combine two predicate sides with AND/OR, or compare their operand cells."""
     match expr.op:
         case "AND":
             return satisfies(expr.left, values) and satisfies(expr.right, values)
@@ -200,6 +220,7 @@ def _predicate_binop(expr: BinOp, values: dict[str, object]) -> bool:
 
 
 def _cell(operand: Expr, values: dict[str, object]) -> object:
+    """Resolve a predicate operand (column ref or literal) to its raw value."""
     if isinstance(operand, ColumnRef):
         return values.get(operand.name)
     if isinstance(operand, LiteralExpr):
@@ -208,6 +229,7 @@ def _cell(operand: Expr, values: dict[str, object]) -> object:
 
 
 def project_row(row: list[Any], names: list[str], projection: Projection | None) -> list[Any]:
+    """Pass a row through its projection unchanged; column-subset projections are deferred until tuple-header renegotiation."""
     if projection is None:
         return row
     wanted = {col.name for col in projection.columns}

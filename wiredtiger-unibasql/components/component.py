@@ -53,6 +53,8 @@ class _ReplyChannel:
 
 @dataclass
 class _QueuedRequest:
+    """One inbound request awaiting the worker, together with its reply channel."""
+
     raw: bytes
     channel: _ReplyChannel
 
@@ -67,11 +69,22 @@ class Component(ABC):
     Constraint: call graphs must be free of re-entrant cycles, i.e. a handler
     must not issue a request that transitively waits on its own worker.
     Downward chains (A -> B -> C with replies unwinding) are fine.
+
+    Streaming is generic: EVERY component can own streams — locally produced
+    (`register_stream`) or mirrored relays of an upstream (`open_stream_relay`).
+    Serving stream_next/stream_close is generic, so concrete components never
+    parse stream frames.
     """
 
     def __init__(
         self, name: str, broker_protocol_path: Path, protocol_path: Path, broker_socket: str, component_socket: str
     ) -> None:
+        """Load protocols, open the component listener and broker connection, and start the worker.
+
+        Responder invocation is worker-thread-confined (no internal locking needed);
+        `_broker_lock` serializes transceive on the single shared broker connection.
+        Registers with the broker before returning.
+        """
         self.name = name
         self.log = get_logger(name)
         self.socket_path: str = component_socket
@@ -82,17 +95,12 @@ class Component(ABC):
         self.broker_connection = self._connect_to_broker(broker_socket=broker_socket)
 
         self.requestor = avro.ipc.Requestor(self.broker_protocol, self.broker_connection)
-        # Worker-thread-confined: only the worker thread calls responder.invoke, so responders need no internal locking for handler state.
         self.responder = self._create_responder(self.protocol)
         self._correlation_ids = itertools.count(1)
         self._sequence_ids = itertools.count(1)
-        # Serializes transceive (write-frame + blocking-read-frame) on the single shared broker_connection; without it concurrent call_remote() calls can read each other's responses.
         self._broker_lock = threading.Lock()
         self._inbox: queue.Queue[_QueuedRequest | None] = queue.Queue()
         self._worker_ident: int | None = None
-        # Generic streaming layer: EVERY component can own streams — locally produced
-        # (register_stream) or mirrored relays of an upstream (open_stream_relay). Serving
-        # stream_next/stream_close is generic; concrete components never parse stream frames.
         self.registry = StreamRegistry()
         self.stream_ttl_seconds = DEFAULT_STREAM_TTL_SECONDS
         self.stream_page_cap = DEFAULT_STREAM_PAGE_CAP

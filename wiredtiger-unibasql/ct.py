@@ -1,3 +1,5 @@
+"""Launcher for the catalog component."""
+
 from pathlib import Path
 
 from components.catalog import CatalogComponent

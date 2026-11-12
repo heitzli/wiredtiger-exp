@@ -1,3 +1,5 @@
+"""Launcher for the query processor; constructs a QueryProcessor with bypass_catalog=False."""
+
 from pathlib import Path
 
 from components import QueryProcessor

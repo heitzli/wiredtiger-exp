@@ -40,6 +40,8 @@ SetMembersType: TypeAlias = tuple[UnresolvedColumn, UnresolvedLiteralExpr]
 
 
 class RaisingErrorListener(ErrorListener):
+    """Turns ANTLR lexer/parser errors into ``UnibaSQLSyntaxError``."""
+
     def syntaxError(
         self,
         recognizer,
@@ -49,6 +51,8 @@ class RaisingErrorListener(ErrorListener):
         msg: str,
         e: RecognitionException | None,
     ) -> None:
+        """Raise immediately; errors abort the parse (no recovery)."""
+
         raise UnibaSQLSyntaxError(f"Syntax error at line {line}, column {column}: {msg}")
 
 
@@ -58,6 +62,8 @@ class UnibaSQLSyntaxExtractor(UnibaSQLVisitor):
     # +++ Query / Transactions
 
     def visitQuery(self, ctx: UnibaSQLParser.QueryContext) -> ParseResult:  # type: ignore
+        """Visit whichever alternative the grammar matched (transaction, statement list, or standalone txn boundary)."""
+
         if ctx.transaction():
             return self.visit(ctx.transaction())  # type: ignore
         if ctx.statementList():
@@ -98,6 +104,8 @@ class UnibaSQLSyntaxExtractor(UnibaSQLVisitor):
         return self.visit(ctx.statementDML())  # type: ignore
 
     def visitSetOperationStatement(self, ctx: UnibaSQLParser.SetOperationStatementContext) -> UnresolvedSetOperation:  # type: ignore
+        """Fold ``SELECT ... UNION/EXCEPT SELECT ...`` chains into left-nested UnresolvedSetOperations."""
+
         queries = ctx.statementDQL()
 
         result = self.visit(queries[0])  # type: ignore
@@ -301,6 +309,8 @@ class UnibaSQLSyntaxExtractor(UnibaSQLVisitor):
     # +++ Values
 
     def visitValue(self, ctx: UnibaSQLParser.ValueContext) -> UnresolvedLiteralExpr:  # type: ignore
+        """Classify a literal by token; numbers with ``.`` become doubles, others ints."""
+
         if ctx.STRING():
             return UnresolvedLiteralExpr(value=ctx.STRING().getText()[1:-1].replace("''", "'"), type="string")  # type: ignore
 
@@ -322,6 +332,8 @@ class UnibaSQLSyntaxExtractor(UnibaSQLVisitor):
 
 
 def parse_unibasql(docql: str) -> ParseResult:  # type: ignore
+    """Parse a UnibaSQL query string into its unresolved statement tree (or transaction)."""
+
     lexer = UnibaSQLLexer(input=InputStream(data=docql))
     lexer.removeErrorListeners()
     lexer.addErrorListener(listener=RaisingErrorListener())

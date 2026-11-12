@@ -1,4 +1,5 @@
-# NOTE: Relational cell codec for UnibaSQL tables.
+"""Fixed-length relational cell codec for UnibaSQL tables: packed (key / nullmap+value) wire
+rows whose nullability is governed by an explicit null bitmap, not placeholder values."""
 
 from __future__ import annotations
 
@@ -55,6 +56,7 @@ def encode_nullmap(null_flags: list[bool] | tuple[bool, ...]) -> bytes:
 
 
 def decode_nullmap(data: bytes, num_value_cols: int) -> list[bool]:
+    """Per-column NULL flags from a null bitmap (inverse of encode_nullmap); missing bits read False."""
     flags = []
     for i in range(num_value_cols):
         flags.append(bool(data[i // 8] >> (i % 8) & 1) if i // 8 < len(data) else False)
@@ -62,6 +64,7 @@ def decode_nullmap(data: bytes, num_value_cols: int) -> list[bool]:
 
 
 def encode_cell(dtype: DataType, value: object) -> object:
+    """Materialized (non-NULL) Python value -> storage cell for ``dtype`` (DOUBLE big-endian)."""
     match dtype:
         case DataType.BOOL:
             return int(bool(value))
@@ -77,7 +80,8 @@ def encode_cell(dtype: DataType, value: object) -> object:
 
 
 def blank_cell(dtype: DataType) -> str | bytes | int:
-    # NOTE null bitmap is authorative, these are just dummy values to set
+    """Type-correct filler for NULL cells — the null bitmap is authoritative, these dummies only
+    satisfy the wire format."""
     match dtype:
         case DataType.STRING:
             return ""
@@ -89,6 +93,7 @@ def blank_cell(dtype: DataType) -> str | bytes | int:
 
 
 def decode_cell(dtype: DataType, raw: str | bytes | int) -> object:
+    """Storage cell -> Python value (NULL dtype decodes to None; DOUBLE big-endian)."""
     match dtype:
         case DataType.BOOL:
             return bool(int(raw))
@@ -104,6 +109,7 @@ def decode_cell(dtype: DataType, raw: str | bytes | int) -> object:
 
 
 def wire_cell(dtype: DataType, value: object) -> object:
+    """Python value -> container-friendly wire cell (None passes through)."""
     if value is None:
         return None
     match dtype:

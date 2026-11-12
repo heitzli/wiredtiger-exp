@@ -1,9 +1,7 @@
 """Consumer-side handle over one streamed RPC: init reply, paged pulls, idempotent close.
 
-One implementation serves every consumer seat: `Client._query`, the relay source in
-`Component.open_stream_relay`, and the EE exec-tree leaf (`TableScanExecNode`). Exactly-once
-closing: `close()` clears the id first, so iteration finalizers, abort paths and registry
-closers can all race idempotently.
+One implementation serves every consumer seat (client queries, `Component.open_stream_relay`,
+the exec-tree scan leaf). `close()` clears the id first, so racing finalizers/closers are safe.
 """
 
 from __future__ import annotations
@@ -29,6 +27,7 @@ class RemoteStream:
 
     @property
     def streamed(self) -> bool:
+        """False means the reply was one-shot and there is nothing to pull or close."""
         return self._stream_id is not None
 
     @property
@@ -37,6 +36,7 @@ class RemoteStream:
 
     @property
     def header(self) -> str | None:
+        """Row-type authority (`value["columns"]`) from the init reply, if any."""
         return (self.init.get("value") or {}).get("columns")
 
     def pages(self) -> Iterator[list[Any]]:
@@ -53,6 +53,7 @@ class RemoteStream:
                 break
 
     def __iter__(self) -> Iterator[Any]:
+        """Flatten pages into items; closes (exactly once) on exhaustion or early exit."""
         try:
             for page_rows in self.pages():
                 yield from page_rows

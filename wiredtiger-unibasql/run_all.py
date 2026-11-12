@@ -1,8 +1,4 @@
-"""Starts the full UnibaSQL component stack (broker + five components) in background threads.
-
-Each component serves on its usual unix socket. Ctrl+C stops them all: worker queues are
-drained, listeners closed, socket files unlinked.
-"""
+"""Start the full UnibaSQL stack (broker + five components) in background threads; Ctrl+C stops them all."""
 
 import logging
 import os
@@ -42,6 +38,7 @@ def _serve(component: Component, label: str, stop_done: threading.Event) -> None
 
 
 def main() -> None:
+    """Launch broker first, then the five components; block until Ctrl+C triggers shutdown."""
     threads: list[threading.Thread] = []
     stop_events: list[threading.Event] = []
 

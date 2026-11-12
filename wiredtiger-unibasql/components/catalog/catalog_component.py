@@ -17,8 +17,8 @@ class CatalogResponder(Responder):
         super().__init__(local_protocol)
         self.catalog = catalog
 
-    # TODO rethink if that many messages are necessary for catalog protocol
     def invoke(self, local_message, request):  # type: ignore
+        """Dispatch catalog RPCs (get/set/exists/entries/delete/snapshot lifecycle) to their operations. TODO: reconsider whether this many messages are needed in the catalog protocol."""
         message = local_message.name
 
         if message == "get":
@@ -47,6 +47,8 @@ class CatalogResponder(Responder):
 
 
 class CatalogComponent(Component):
+    """Very simple in-memory catalog: whole-catalog dict plus per-transaction snapshot copies, dumped to JSON after mutations."""
+
     def __init__(
         self,
         name: str,
@@ -56,14 +58,11 @@ class CatalogComponent(Component):
         component_socket: str,
         dump_path: str = "catalog_dump.json",
     ) -> None:
+        """Wire the component and initialize an empty in-memory catalog plus per-tx snapshot store (always starts empty; last writer wins)."""
         self.dump_path = dump_path
         super().__init__(name, broker_protocol_path, protocol_path, broker_socket, component_socket)
-        # NOTE very simple in memory catalog for the moment
         self.catalog: dict[str, dict[str, dict[str, str]]] = {}
-        # NOTE one in-memory snapshot of the whole catalog per transaction (tx_id -> catalog copy).
-        # Snapshots are taken at BEGIN and released at COMMIT/ROLLBACK;
         self.snapshots: dict[str, dict[str, dict[str, dict[str, str]]]] = {}
-        # FIXME for the moment last writer wins
 
     # --- in-memory operations (shared by responder invocation and direct in-process use) ---------------
 
@@ -146,10 +145,10 @@ class CatalogComponent(Component):
     # --- component plumbing ---------------------------------------------------------------------------
 
     def _dump(self) -> None:
-        # NOTE plain JSON dump of the in-memory dict purely for inspection; serves nothing back
-        # (startup is always empty by design), written after every mutating operation.
+        """Plain JSON dump of the in-memory dict for inspection only (nothing reads it back; startup is always empty by design)."""
         with open(self.dump_path, "w", encoding="utf-8") as fh:
             json.dump(self.catalog, fh, indent=2, sort_keys=True)
 
     def _create_responder(self, protocol: Protocol) -> Responder:
+        """Wire this component into its Avro responder."""
         return CatalogResponder(local_protocol=protocol, catalog=self)

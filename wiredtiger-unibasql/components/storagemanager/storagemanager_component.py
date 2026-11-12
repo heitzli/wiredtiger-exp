@@ -27,11 +27,15 @@ from ..queryprocessor.unibasql_unresolved import ColumnConstraint, DataType, DDL
 from . import row_codec
 from .wt_utils import check, wt_transaction
 
-# _SCAN_TX_CONFIG is the SM-local snapshot isolation config for unpinned scans
-_SCAN_TX_CONFIG = "isolation=snapshot"  # repeatable-read snapshot for unpinned scans
+# Snapshot-isolation ("repeatable read") config for the SM-local transactions backing unpinned scans
+_SCAN_TX_CONFIG = "isolation=snapshot"
 
 
 class StorageManagerResponder(Responder):
+    """Plan executor half of the component: translates algebra/DDL/TCL nodes into WiredTiger
+    operations (scans, inserts, DDL), keeps one Session per running transaction, and mirrors
+    DDL metadata into the catalog."""
+
     def __init__(self, local_protocol: Protocol, storage_manager: StorageManagerComponent) -> None:
         super().__init__(local_protocol)
         self.storage_manager = storage_manager
@@ -44,6 +48,7 @@ class StorageManagerResponder(Responder):
         self.transactions: dict[str, Session] = {}
 
     def invoke(self, local_message: Any, request: dict[str, Any]) -> Any:  # type: ignore[override]
+        """Accepted RPCs ('execute', 'execute_ddl'/'execute_tcl') all funnel into execute()."""
         message = local_message.name
         # TODO check if separation is needed here or sufficient in execute / dispatch
         if message == "execute":
@@ -53,6 +58,7 @@ class StorageManagerResponder(Responder):
             return self.execute(request=request)
 
     def execute(self, request: dict[str, Any]) -> dict[str, Any]:
+        """Log-and-reraise wrapper around _dispatch (failures surface with full tracebacks)."""
         inner = request["request"]
         node = inner["plan"]
         kind = node["kind"]
@@ -65,6 +71,7 @@ class StorageManagerResponder(Responder):
             raise
 
     def _dispatch(self, node: dict[str, Any], kind: str, custom: dict[str, str]) -> dict[str, Any]:
+        """Route a deserialized plan node by kind: TxStart/TxEnd, Table/Index DDL (create/drop), TableScan, insert-Union."""
         match kind:
             case "TxStartNode":
                 tx_start: TxStartNode = TxStartNode.from_avro(node)
@@ -125,6 +132,8 @@ class StorageManagerResponder(Responder):
     def _raw_scan_tuples(
         cursor: Cursor, n_pk: int, n_val: int, schema: list[tuple[str, DataType, str | None, int]]
     ) -> Iterator[list[Any]]:
+        """Decode raw cursor records into logical tuples: PK cells first, then value cells with
+        nullmap-flagged positions replaced by None."""
         pk_types = [c[1] for c in schema if c[2] is ColumnConstraint.PRIMARY_KEY]
         val_types = [c[1] for c in schema if c[2] is not ColumnConstraint.PRIMARY_KEY]
         while cursor.next() == 0:
@@ -209,6 +218,9 @@ class StorageManagerResponder(Responder):
         return self.storage_manager.connection.open_session(), True
 
     def _dispose_scan_session(self, session: Session) -> None:
+        """Exactly-once teardown of a privately owned scan session (runs via StreamHandle.dispose()):
+        rollback then close are individually guarded so disposal can be retried and never masks
+        the error originally in flight."""
         try:
             session.rollback_transaction()
         except Exception:  # noqa: BLE001 — disposal is best effort
@@ -216,7 +228,9 @@ class StorageManagerResponder(Responder):
         session.close()
 
     def _handle_table_scan(self, node: dict[str, Any], tx_id: str | None = None) -> dict[str, Any]:
-        """Registers a raw tuple-scan stream (cursor + iterator); operators replay in the EE."""
+        """Registers a raw tuple-scan stream (cursor + iterator); operators replay in the EE.
+        Inside a transaction the scan SHARES the tx session (dispose only drops the cursor);
+        otherwise the stream owns a snapshot session torn down exactly once on dispose."""
         scan = AbstractAlgebraNode.from_avro(node)
         if not isinstance(scan, TableScan):
             raise WiredTigerError(f"No executor for node kind {type(scan).__name__!r} in storagemanager")
@@ -244,9 +258,6 @@ class StorageManagerResponder(Responder):
             yield from self._raw_scan_tuples(cursor, len(pk_cols), len(val_cols), schema)
 
         def dispose_scan() -> None:
-            # EXACTLY-ONCE via StreamHandle.dispose(); for a private snapshot session this
-            # aborts the read txn and closes both cursor and session; a shared tx session
-            # keeps living (only the cursor goes away)
             try:
                 cursor.close()
             except Exception:  # noqa: BLE001
@@ -270,6 +281,8 @@ class StorageManagerResponder(Responder):
         return {"value": {"columns": header}, "custom": None, "stream_id": stream_id}
 
     def _handle_tx_start(self, node: TxStartNode, tx_id: str) -> dict[str, Any]:
+        """Begin a transaction on a dedicated session and register it under ``tx_id``
+        (lifecycle of that session ends at the matching TxEndNode)."""
         if tx_id in self.transactions.keys():
             raise ValueError(f"Transaction with same ID {node.tx_id} running")
         session = self.storage_manager.connection.open_session()
@@ -279,6 +292,8 @@ class StorageManagerResponder(Responder):
         return {"value": {"tx_id": tx_id}}
 
     def _handle_tx_end(self, node: TxEndNode, tx_id: str) -> dict[str, Any]:
+        """Commit or roll back the registered tx session (with checkpoint), then unregister it;
+        scan streams that were borrowing the session are force-discarded (leak protection)."""
         # TxID must exist
         if not tx_id:
             raise ValueError("No Transaction id provided")
@@ -306,6 +321,7 @@ class StorageManagerResponder(Responder):
     # +++ catalog synchronization -----------------------------------------------------------------------
 
     def _catalog_set(self, name: str, key: str, value: dict[str, dict[str, str]]) -> None:
+        """Write one catalog entry remotely; conversion failures surface as WiredTigerError."""
         try:
             self.storage_manager.call_remote(
                 destination="catalog", rpc_name="set", params={"table": name, "key": key, "value": value}
@@ -314,16 +330,15 @@ class StorageManagerResponder(Responder):
             raise WiredTigerError(f"Failed to update catalog entry {name}.{key}: {e}") from e
 
     def _catalog_delete(self, name: str) -> None:
+        """Remove a whole catalog bucket (table or index); failures surface as WiredTigerError."""
         try:
             self.storage_manager.call_remote(destination="catalog", rpc_name="delete", params={"name": name})
         except Exception as e:
             raise WiredTigerError(f"Failed to delete catalog entry {name}: {e}") from e
 
     def _sync_catalog_create_table(self, node: TableDDL) -> None:
-        # NOTE the WHOLE schema goes into one entry: catalog[table]["schema"] = {col: {props}};
-        # "position" preserves the SQL definition order because the avro map return does not
-        # guarantee ordering (WT's physical PK-first order is a separate concern, see the reorder
-        # NOTE in _handle_create_table).
+        """Persist the WHOLE schema as one catalog entry (catalog[table]['schema'] = {col: props});
+        'position' preserves SQL definition order since the avro map return guarantees none."""
         self._catalog_set(
             name=node.table.name,
             key="schema",
@@ -338,9 +353,9 @@ class StorageManagerResponder(Responder):
         )
 
     def _sync_catalog_create_index(self, node: IndexDDL) -> None:
+        """Store index meta under the reserved 'index' key — that key's presence is what marks a
+        catalog bucket as an index (vs table) in the analyzer's checks."""
         idx_cols = ",".join(c.name for c in node.columns) if node.columns else ""
-        # NOTE the bucket carries its meta under the reserved "index" key; the presence of that key
-        # is what tells an index bucket apart from a table bucket in the analyzer's checks.
         self._catalog_set(
             name=node.idx_name,
             key="index",
@@ -350,21 +365,20 @@ class StorageManagerResponder(Responder):
     # ---
 
     def _handle_create_index(self, node: IndexDDL, tx_id: str | None = None) -> dict[str, Any]:
-        # NOTE session.create() is not transactional!
+        """CREATE INDEX in WT (session.create is NOT transactional, hence catalog sync also runs
+        on the in-txn path); outside a transaction the create is wrapped in its own single tx.
+        Column existence is assumed guaranteed by parser/analyzer."""
         table_name = node.table.name
         idx_name = node.idx_name
-        # NOTE: columns are guaranteed to exists through parser/analyzer
         idx_cols = [c.name for c in node.columns] if node.columns else []
         idx_cols_str = ",".join(c for c in idx_cols)
 
         if tx_id:
             if tx_session := self.transactions.get(tx_id):
                 check(tx_session.create(f"index:{table_name}:{idx_name}", f"columns=({idx_cols_str}),exclusive=true"))
-                # NOTE catalog is updated even on the in-txn path (session.create is not transactional anyway)
                 self._sync_catalog_create_index(node=node)
                 return {"value": {}}
 
-        # NOTE fallback is a single tx, maybe should add error logging here or something similar
         with self.storage_manager.connection.open_session() as session:
             with wt_transaction(session=session):
                 check(session.create(f"index:{table_name}:{idx_name}", f"columns=({idx_cols_str})"))
@@ -387,29 +401,27 @@ class StorageManagerResponder(Responder):
             return {"value": {}}
 
     def _handle_drop_table(self, node: TableDDL, tx_id: str | None = None) -> dict[str, Any]:
+        """DROP TABLE with file removal; only the table bucket is deleted from the catalog —
+        index meta buckets referencing this table become stale (accepted in debug mode for now)."""
         if tx_id:
             if tx_session := self.transactions.get(tx_id):
                 check(tx_session.checkpoint())
                 check(tx_session.drop(f"table:{node.table.name}", "remove_files=true"))
-                # NOTE only the table bucket is removed; index meta buckets referencing this table
-                # become stale here (accepted in debug mode for now).
                 self._catalog_delete(name=node.table.name)
                 return {"value": {}}
         with self.storage_manager.connection.open_session() as session:
             check(session.checkpoint())
             with wt_transaction(session):
                 check(session.drop(f"table:{node.table.name}", "remove_files=true"))
-                # NOTE only the table bucket is removed; index meta buckets referencing this table
-                # become stale here (accepted in debug mode for now).
                 self._catalog_delete(name=node.table.name)
                 return {"value": {}}
 
     def _handle_create_table(self, node: TableDDL, tx_id: str | None = None) -> dict[str, Any]:
-        # NOTE there might be a reorder when keys not in beginning of definition! look if need to handle or store that way in catalog!
-        # NOTE directly sent from qp to sm, bypass qopt
-        # TODO: send updates directly to "catalog"
-        # NOTE: secondary indexes are not used automatically, primary index is used automatically
-        # NOTE session.create() is not transactional!
+        """Build the table in WT (PK-first key format, 'u'-prefixed value format carrying the
+        nullmap) and mirror the schema to the catalog — also on the in-txn path, because
+        session.create() is NOT transactional. DDL arrives straight from the QP (bypasses qopt);
+        secondary indexes are not picked up automatically, only the (implicitly indexed) PK.
+        Reordering of tables with non-leading PK keys remains an open caveat."""
         key_cols: list[tuple[str, str]] = []
         cols: list[tuple[str, str]] = []
         table = node.table
@@ -444,6 +456,10 @@ class StorageManagerResponder(Responder):
 
 
 class StorageManagerComponent(Component):
+    """Storage backend component: sole owner of the WiredTiger home directory and its single
+    long-lived connection; hosts the plan-executing responder, drives transaction lifecycles
+    (one WT session per tx), registers scan streams, and keeps DDL metadata in sync with the catalog."""
+
     def __init__(
         self,
         name: str,
@@ -464,14 +480,16 @@ class StorageManagerComponent(Component):
         self._stream_tx: dict[str, str] = {}
 
     def _on_stream_gone(self, stream_id: str) -> None:
-        # base hook: a scan stream ended (exhausted / closed / swept / TxEnd force-release)
+        """Base-component hook: drop the tx lease of a stream that exhausted, closed, was swept,
+        or was force-released at TxEnd."""
         self._stream_tx.pop(stream_id, None)
 
     def _create_responder(self, protocol: Protocol) -> Responder:
+        """Plug in the storage-aware responder bound to this component."""
         return StorageManagerResponder(local_protocol=protocol, storage_manager=self)
-        # The storage manager maintains a single connection  to the wiredtiger db
 
     def _init_wt_folder(self) -> None:
+        """(Re)create an EMPTY WiredTiger home dir (deletes any existing one; debug behavior)."""
         # TODO: for creation debugging, remove when done
         if os.path.isdir(self.db_path):
             shutil.rmtree(self.db_path)

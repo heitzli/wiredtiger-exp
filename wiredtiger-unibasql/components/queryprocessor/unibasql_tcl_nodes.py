@@ -16,8 +16,9 @@ from .unibasql_unresolved import TxResult
 TxNodes: TypeAlias = AbstractAlgebraNode | AbstractDDLNode | "AbstractTCLNode"
 
 
-# NOTE seperate algebra from ddl but effectively the same
 class AbstractTCLNode(BaseModel, ABC):
+    """Mirror of the algebra/DDL node hierarchies, but for transaction control statements."""
+
     model_config = ConfigDict(frozen=True)
     custom: dict[str, str] = dict()
     # TODO in the future each component will have their own protocol folder for the moment ref the "global proto folder"
@@ -26,12 +27,20 @@ class AbstractTCLNode(BaseModel, ABC):
     )
 
     @abstractmethod
-    def children(self) -> list[TxNodes]: ...
+    def children(self) -> list[TxNodes]:
+        """Child nodes in traversal order."""
+
+        ...
 
     @abstractmethod
-    def label(self) -> str: ...
+    def label(self) -> str:
+        """Short printable identity."""
+
+        ...
 
     def print_tree(self, indent=0):
+        """Print this node's subtree, one indented label per line."""
+
         print("  " * indent + self.label())
         for child in self.children():
             child.print_tree(indent + 1)
@@ -82,9 +91,8 @@ class AbstractTCLNode(BaseModel, ABC):
         return datum
 
     def _statement_to_wire(self, statement: TxNodes) -> dict[str, Any]:
-        # NOTE: union of record branches -> the datum is the bare record; DatumWriter picks
-        # the first branch whose key set validates (the flavors' keys are disjoint, so the
-        # match is unique — verified for kind-only datums too).
+        # NOTE: union of record branches -> the datum is the bare record; the writer picks
+        # the first branch whose key set validates (branch keys are disjoint, so unique).
         match statement:
             case AbstractTCLNode():
                 return statement._tcl_node_to_avro()
@@ -152,6 +160,8 @@ class AbstractTCLNode(BaseModel, ABC):
 
 
 class TCLNode(AbstractTCLNode):
+    """Generic TCL node with no fixed shape; also the forward-compatible decode fallback."""
+
     kind: str
     tx_id: str | None = None
     tx_result: TxResult | None = None
@@ -169,6 +179,8 @@ class TCLNode(AbstractTCLNode):
 
 
 class TxStartNode(AbstractTCLNode):
+    """Marks the start of a transaction with its id."""
+
     kind: Literal["TxStartNode"] = "TxStartNode"
     tx_id: str
 
@@ -180,6 +192,8 @@ class TxStartNode(AbstractTCLNode):
 
 
 class TxEndNode(AbstractTCLNode):
+    """Marks the commit/rollback outcome of a transaction."""
+
     kind: Literal["TxEndNode"] = "TxEndNode"
     tx_result: TxResult
 
@@ -191,6 +205,8 @@ class TxEndNode(AbstractTCLNode):
 
 
 class TransactionNode(AbstractTCLNode):
+    """Wraps a bounded block of statements as one atomic transaction."""
+
     kind: Literal["TransactionNode"] = "TransactionNode"
     tx_start: TxStartNode
     tx_end: TxEndNode

@@ -1,3 +1,5 @@
+"""End-to-end demo: run DDL/inserts/selects against the stack via the typed Client."""
+
 from pathlib import Path
 
 from components import Client
@@ -32,6 +34,7 @@ def render_cell(tag: str, cell: object) -> str:
 
 
 def render_row(columns: list[tuple[str, str]], row: list) -> str:
+    """Format one row as "name=value" pairs joined by commas."""
     return ", ".join(f"{name}={render_cell(tag, cell)}" for (name, tag), cell in zip(columns, row))
 
 

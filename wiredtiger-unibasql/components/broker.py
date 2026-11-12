@@ -27,11 +27,15 @@ log = get_logger("broker")
 
 
 class BrokerResponder(avro.ipc.Responder):
+    """Avro responder for the broker's own RPC surface: register, sendMessage, getComponentProtocol."""
+
     def __init__(self, protocol: avro.protocol.Protocol, broker: Broker) -> None:
+        """Initialize with the broker protocol and a back-reference for routing."""
         super().__init__(local_protocol=protocol)
         self._broker: Broker = broker
 
     def invoke(self, message: avro.protocol.Message, request: RequestDict):  # type: ignore
+        """Dispatch one broker-side RPC to its handler by message name."""
         method = message.name
 
         if method == "register":
@@ -47,6 +51,7 @@ class BrokerResponder(avro.ipc.Responder):
         raise RuntimeError(f"Unknown RPC method: {method}")
 
     def send_message(self, request: RequestDict) -> ResultDict:
+        """Forward one client Message via Broker.forward and wrap the reply back as a dict."""
         message = message_from_dict(request["message"])
         log.info(
             "route",
@@ -61,6 +66,7 @@ class BrokerResponder(avro.ipc.Responder):
         return message_to_dict(reply)
 
     def register(self, request: RequestDict) -> dict[str, int]:
+        """Record a component's socket path and protocol under its name."""
         inner = request["request"]
         name = inner["name"]
         socket_path = inner["socket"]
@@ -74,6 +80,7 @@ class BrokerResponder(avro.ipc.Responder):
         return {"result": 0}
 
     def get_component_protocol(self, request):
+        """Return the named component's protocol as JSON (None if unknown)."""
         inner = request["request"]
         name = inner["name"]
 
@@ -85,13 +92,18 @@ class BrokerResponder(avro.ipc.Responder):
 
 
 class Broker:
+    """Central message broker routing opaque Messages between components over Unix sockets.
+
+    On registration each component sends all messages of its protocol; other
+    components can look up the message format by target name (getComponentProtocol).
+    """
+
     def __init__(self, protocol_path: Path) -> None:
-        # Inject broker into broker responder
+        """Bind the responder (with back-reference to self), the listener socket, and the log collector."""
         self.responder = BrokerResponder(protocol=self._load_protocol(protocol_path=protocol_path), broker=self)
         self.sock = self.start_unix_server(path="/tmp/broker.sock")
         self.components: dict[str, str] = dict()
         self.brocker_lock: threading.Lock = threading.Lock()
-        # When registering with the broker the component sends all messages that are part of its protocol, other components can request based on target name and message name the message format
 
         self.known_protocols: dict[str, Protocol] = dict()
         try:
@@ -128,10 +140,12 @@ class Broker:
         return reply
 
     def _load_protocol(self, protocol_path: Path) -> Protocol:
+        """Parse the broker's own protocol from an .avpr file."""
         with open(file=str(protocol_path.absolute()), mode="r", encoding="utf-8") as f:
             return avro.protocol.parse(json_string=f.read())
 
     def start_unix_server(self, path: str) -> Socket:
+        """Bind a fresh AF_UNIX listener, replacing any stale socket file at `path`."""
         if os.path.exists(path):
             os.unlink(path)
         server = socket.socket(
@@ -143,17 +157,20 @@ class Broker:
         return server
 
     def close(self) -> None:
+        """Shut down the log collector (if any) and the listener socket."""
         if self.log_server is not None:
             self.log_server.close()
         self.sock.close()
 
     def run(self) -> None:
+        """Accept connections forever, spawning one daemon thread per client."""
         while True:
             client_sock, address = self.sock.accept()
             thread = threading.Thread(target=self._handle_connection, args=(client_sock, address), daemon=True)
             thread.start()
 
     def _handle_connection(self, sock: socket.socket, address: str) -> None:
+        """Serve one client: read framed requests and answer each with a framed response."""
         log.info("connect from %r", address)
         framed_socket = FramedSocket(sock, remote_name=f"unix:{address}")
         reader = avro.ipc.FramedReader(framed_socket)

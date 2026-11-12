@@ -7,11 +7,14 @@ AllowedValue: TypeAlias = str | int | float | bool | None
 
 
 class Expr(BaseModel, ABC):
+    """Abstract base of the expression IR (frozen AST node types)."""
+
     model_config = ConfigDict(frozen=True)
     custom: dict[str, str] | None = None
 
 
 def pretty(expr: Expr) -> str:
+    """Render an expression tree as parenthesized infix text."""
     if isinstance(expr, ColumnRef):
         return str(expr)
 
@@ -28,12 +31,16 @@ def pretty(expr: Expr) -> str:
 
 
 class LiteralExpr(Expr):
+    """A typed literal value."""
+
     kind: Literal["LiteralExpr"] = "LiteralExpr"
     type: str
     value: AllowedValue
 
 
 class BinOp(Expr):
+    """Binary operation over two subexpressions."""
+
     kind: Literal["BinOp"] = "BinOp"
     op: str
     left: Expr
@@ -41,12 +48,16 @@ class BinOp(Expr):
 
 
 class UnOp(Expr):
+    """Unary operation over one subexpression."""
+
     kind: Literal["UnOp"] = "UnOp"
     op: str
     expr: Expr
 
 
 class ColumnRef(Expr):
+    """Reference to a column, optionally qualified by a table/alias."""
+
     kind: Literal["ColumnRef"] = "ColumnRef"
     name: str
     qualifier: str | None = None
@@ -58,6 +69,8 @@ class ColumnRef(Expr):
 
 
 class TableRef(Expr):
+    """Reference to a table, optionally aliased."""
+
     kind: Literal["TableRef"] = "TableRef"
     name: str
     alias: str | None = None

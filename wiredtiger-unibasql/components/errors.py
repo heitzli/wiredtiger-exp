@@ -1,12 +1,8 @@
-"""Wire-mappable exception types shared by every component.
+"""Wire-mappable exception types shared by every component (the binary errors union only
+carries the branch index, so the concrete type travels in-band in the ``kind`` field).
 
-Errors that cross a component boundary are serialized into the Avro ``errors``
-union declared by the protocol of the failing RPC. The binary protocol only
-sends the union branch *index*, and avro-python does not expose which branch was
-written on decode, so the concrete error type travels in-band in the ``kind``
-field of the error record (see ``components.message_codec.encode_error_payload``)
-and is mapped back to the right class via ``ERROR_REGISTRY``. The ``component``
-field carries the name of the component where the error originally occurred.
+Exceptions carry ``source`` provenance; ``ERROR_REGISTRY`` maps ``kind`` back to the class
+(``encode_error_payload`` / ``error_from_datum``).
 """
 
 from __future__ import annotations
